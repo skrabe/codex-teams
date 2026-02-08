@@ -1,47 +1,61 @@
 # codex-teams
 
-MCP server for team-based agent orchestration. Creates teams of AI agents that work together autonomously — with structured communication, task dependencies, and verification loops — powered by [Claude Code](https://code.claude.com/docs) and the [Codex CLI](https://github.com/openai/codex).
+Spawn teams of AI agents from Claude Code. Each team has a lead and workers that collaborate autonomously — chatting, sharing files, and coordinating through structured channels — while you watch or go grab coffee.
 
-## Architecture
+Powered by [Claude Code](https://code.claude.com/docs) and the [Codex CLI](https://github.com/openai/codex).
 
 ```mermaid
 graph TB
-    CC[Claude Code] <-->|stdio MCP| CTS[codex-teams MCP Server]
-    CTS <-->|stdio MCP client| CODEX[Codex CLI mcp-server]
-    CODEX --> A1[Agent 1]
-    CODEX --> A2[Agent 2]
-    CODEX --> A3[Agent N]
-    A1 <-->|HTTP MCP| COMMS[team-comms Server]
-    A2 <-->|HTTP MCP| COMMS
-    A3 <-->|HTTP MCP| COMMS
-    COMMS --- GC[Group Chat]
-    COMMS --- DM[Direct Messages]
-    COMMS --- LC[Lead Chat]
-    COMMS --- SA[Shared Artifacts]
+    YOU["You"]
+    CC["Claude Code"]
+    YOU --> CC
 
+    subgraph "Team: Frontend"
+        direction TB
+        L1["Lead — Architect"]
+        W1["React Developer"]
+        W2["CSS Developer"]
+        W3["Accessibility"]
+        L1 ~~~ W1
+        L1 ~~~ W2
+        L1 ~~~ W3
+    end
+
+    subgraph "Team: Backend"
+        direction TB
+        L2["Lead — API Design"]
+        W4["Database"]
+        W5["Auth"]
+        W6["Search"]
+        L2 ~~~ W4
+        L2 ~~~ W5
+        L2 ~~~ W6
+    end
+
+    CC --> L1
+    CC --> L2
+    L1 <-.->|"cross-team"| L2
+
+    style YOU fill:#6366f1,color:#fff
     style CC fill:#6366f1,color:#fff
-    style CTS fill:#0ea5e9,color:#fff
-    style CODEX fill:#f97316,color:#fff
-    style COMMS fill:#10b981,color:#fff
+    style L1 fill:#f59e0b,color:#000
+    style L2 fill:#f59e0b,color:#000
+    style W1 fill:#3b82f6,color:#fff
+    style W2 fill:#3b82f6,color:#fff
+    style W3 fill:#3b82f6,color:#fff
+    style W4 fill:#3b82f6,color:#fff
+    style W5 fill:#3b82f6,color:#fff
+    style W6 fill:#3b82f6,color:#fff
 ```
-
-**Three servers, one system:**
-
-| Server | Transport | Purpose |
-|--------|-----------|---------|
-| codex-teams | stdio MCP | Exposes team/agent/task/mission tools to Claude Code |
-| Codex CLI | stdio MCP client | Spawns agent threads, executes tasks |
-| team-comms | HTTP MCP | Agent-to-agent communication (group chat, DMs, artifacts) |
 
 ## Features
 
-- **Team management** — Create teams with specialized agents, each with their own model, sandbox, and instructions
-- **Three execution modes** — Direct messaging, parallel dispatch, and full missions with lead coordination
-- **Structured communication** — Group chat, direct messages, cross-team lead chat, shared artifacts
-- **Task dependencies** — Assign tasks with prerequisites; completed tasks auto-trigger dependents
-- **Verification loops** — Missions can run shell commands (e.g., `npm test`) after execution and auto-retry fixes
-- **Agent identity enforcement** — Per-agent tokens prevent impersonation on the comms server
-- **Localhost-only** — Comms server binds to `127.0.0.1`; no external exposure
+- **Teams with leads and workers** — Each agent has a role, specialization, and their own sandbox
+- **Three ways to run** — Quick message, parallel dispatch, or full missions with lead coordination
+- **Agents talk to each other** — Group chat, DMs, cross-team lead channel, shared artifacts
+- **Task dependencies** — Tasks auto-start when their prerequisites complete
+- **Verification loops** — Run `npm test` (or any command) after a mission, auto-retry fixes if it fails
+- **Secure** — Per-agent identity tokens, localhost-only comms
 
 ## Prerequisites
 
@@ -87,67 +101,78 @@ claude mcp list   # Check it's registered
 claude mcp remove codex-teams
 ```
 
-## Usage Modes
+## How It Works
 
-### 1. Direct — `send_message`
+### Dispatch — parallel fire-and-forget
 
-Send a message to a single agent and get their response. Good for targeted questions or sequential workflows.
-
-```
-create_team → send_message → get_output
-```
-
-### 2. Dispatch — `dispatch_team`
-
-Fire-and-forget parallel execution. Creates a team, sends each agent their task simultaneously, collects results, dissolves the team.
+Give each agent a task. They all run at once, results come back, team dissolves.
 
 ```mermaid
-sequenceDiagram
-    participant U as Claude Code
-    participant D as dispatch_team
-    participant A1 as Agent 1
-    participant A2 as Agent 2
-    participant A3 as Agent 3
+graph LR
+    YOU["You"] -->|"dispatch_team"| T["Team"]
 
-    U->>D: dispatch_team(agents + tasks)
-    D->>A1: task 1
-    D->>A2: task 2
-    D->>A3: task 3
-    A1-->>D: result 1
-    A2-->>D: result 2
-    A3-->>D: result 3
-    D-->>U: combined report
-    Note over D: Team auto-dissolved
+    T --> A1["Frontend — Build login page"]
+    T --> A2["Backend — Create API endpoint"]
+    T --> A3["Database — Write migrations"]
+    T --> A4["Tests — Write test suite"]
+
+    A1 -->|"done"| R["Combined Report"]
+    A2 -->|"done"| R
+    A3 -->|"done"| R
+    A4 -->|"done"| R
+    R -->|"results"| YOU
+
+    style YOU fill:#6366f1,color:#fff
+    style R fill:#10b981,color:#fff
+    style A1 fill:#3b82f6,color:#fff
+    style A2 fill:#3b82f6,color:#fff
+    style A3 fill:#3b82f6,color:#fff
+    style A4 fill:#3b82f6,color:#fff
 ```
 
-### 3. Mission — `launch_mission`
+### Mission — lead coordinates workers
 
-Full async orchestration with a lead agent coordinating workers through group chat and DMs, optional verification, and fix-retry loops.
+A lead agent plans the work, assigns tasks via group chat, workers execute autonomously, then optional verification runs tests and retries fixes.
 
 ```mermaid
-stateDiagram-v2
-    [*] --> Executing
-    Executing --> Verifying: Workers complete
-    Executing --> Reviewing: No verify command
-    Verifying --> Reviewing: Tests pass
-    Verifying --> Fixing: Tests fail
-    Fixing --> Verifying: Fixes applied
-    Reviewing --> Completed: Lead compiles report
-    Executing --> Error: Fatal error
-    Verifying --> Error: Fatal error
-    Fixing --> Reviewing: Max retries exceeded
-    Completed --> [*]
-    Error --> [*]
+graph TB
+    YOU["You"] -->|"launch_mission"| M["Mission"]
+
+    M --> EXEC["1. Execute"]
+    EXEC --> LEAD["Lead assigns tasks via group chat"]
+    LEAD --> W1["Worker — Components"]
+    LEAD --> W2["Worker — API routes"]
+    LEAD --> W3["Worker — Database"]
+    LEAD --> W4["Worker — Tests"]
+
+    W1 -->|"shares results"| VERIFY
+    W2 -->|"shares results"| VERIFY
+    W3 -->|"shares results"| VERIFY
+    W4 -->|"shares results"| VERIFY
+
+    VERIFY{"2. Verify — npm test"}
+    VERIFY -->|"pass"| REVIEW["3. Lead compiles final report"]
+    VERIFY -->|"fail"| FIX["Lead assigns fixes, workers retry"]
+    FIX --> VERIFY
+
+    REVIEW --> DONE["Done — team dissolved"]
+
+    style YOU fill:#6366f1,color:#fff
+    style LEAD fill:#f59e0b,color:#000
+    style W1 fill:#3b82f6,color:#fff
+    style W2 fill:#3b82f6,color:#fff
+    style W3 fill:#3b82f6,color:#fff
+    style W4 fill:#3b82f6,color:#fff
+    style DONE fill:#10b981,color:#fff
 ```
 
-**Mission flow:**
-1. Lead and workers start simultaneously
-2. Lead posts task assignments to group chat in a single message
-3. Workers read assignments, execute autonomously, post progress
-4. Workers share deliverables via `share()`
-5. If `verifyCommand` set: run it, lead assigns fixes on failure, workers retry
-6. Lead compiles final report from worker results + comms history
-7. Team auto-dissolved on completion
+### Direct messaging — manual control
+
+Create a team, send messages to individual agents, relay outputs between them. Full control over the conversation.
+
+```
+create_team → send_message → relay → get_output
+```
 
 ## Tools Reference
 
@@ -204,9 +229,9 @@ stateDiagram-v2
 | `get_output` | Get an agent's last output and status |
 | `get_team_report` | Full team report with all agents and task summary |
 
-### Agent Communication (via team-comms HTTP server)
+### Agent-to-Agent Communication
 
-These tools are available to agents themselves during execution:
+These tools are used by agents themselves during execution — you don't call these directly:
 
 | Tool | Description |
 |------|-------------|
@@ -223,43 +248,69 @@ These tools are available to agents themselves during execution:
 | `get_shared` | See everything the team has shared |
 | `get_team_context` | See all teams, agents, roles, specializations, status, and tasks |
 
-## Communication System
+## How Agents Communicate
+
+Agents talk to each other autonomously — you don't route messages. Each team gets its own channels:
 
 ```mermaid
-graph LR
-    subgraph Team A
-        LA[Lead A]
-        W1[Worker 1]
-        W2[Worker 2]
+graph TB
+    subgraph "Team: Frontend"
+        direction LR
+        GC1["Group Chat"]
+        L1["Lead"]
+        W1["Worker 1"]
+        W2["Worker 2"]
+        W3["Worker 3"]
+
+        L1 & W1 & W2 & W3 -->|"post"| GC1
+        W1 <-->|"DM"| W2
+        W1 <-->|"DM"| L1
+        W2 <-->|"DM"| L1
+        W3 <-->|"DM"| L1
     end
 
-    subgraph Team B
-        LB[Lead B]
-        W3[Worker 3]
+    subgraph "Team: Backend"
+        direction LR
+        GC2["Group Chat"]
+        L2["Lead"]
+        W4["Worker 4"]
+        W5["Worker 5"]
+        W6["Worker 6"]
+
+        L2 & W4 & W5 & W6 -->|"post"| GC2
+        W4 <-->|"DM"| L2
+        W5 <-->|"DM"| L2
+        W6 <-->|"DM"| L2
     end
 
-    W1 <-->|DM| W2
-    W1 <-->|DM| LA
-    W2 <-->|DM| LA
-    W3 <-->|DM| LB
-    LA <-->|Lead Chat| LB
+    L1 <-.->|"Lead Channel"| L2
 
-    W1 -->|post| GCA[Group Chat A]
-    W2 -->|post| GCA
-    LA -->|post| GCA
+    SA1["Shared Artifacts"]
+    SA2["Shared Artifacts"]
 
-    W3 -->|post| GCB[Group Chat B]
-    LB -->|post| GCB
+    W1 & W2 & W3 -.->|"share files"| SA1
+    W4 & W5 & W6 -.->|"share files"| SA2
 
-    style LA fill:#f59e0b,color:#000
-    style LB fill:#f59e0b,color:#000
+    style L1 fill:#f59e0b,color:#000
+    style L2 fill:#f59e0b,color:#000
+    style W1 fill:#3b82f6,color:#fff
+    style W2 fill:#3b82f6,color:#fff
+    style W3 fill:#3b82f6,color:#fff
+    style W4 fill:#3b82f6,color:#fff
+    style W5 fill:#3b82f6,color:#fff
+    style W6 fill:#3b82f6,color:#fff
+    style GC1 fill:#10b981,color:#fff
+    style GC2 fill:#10b981,color:#fff
 ```
 
-**Routing rules:**
-- **Same team** — DM directly with `dm_send`
-- **Cross-team** — Only leads can DM each other via `lead_chat`. Workers must ask their lead to relay messages.
+| Channel | Who can use it | Purpose |
+|---------|---------------|---------|
+| **Group Chat** | Everyone on the team | Task updates, progress, questions |
+| **Direct Messages** | Teammates (same team) | 1-on-1 coordination, asking for help |
+| **Lead Channel** | Leads only (cross-team) | Cross-team coordination between leads |
+| **Shared Artifacts** | Everyone on the team | Share file paths, outputs, deliverables |
 
-Agents can call `get_team_context` to discover all teams, agents, and their specializations on demand — then decide whether to DM a teammate or ask their lead to coordinate cross-team.
+Workers can't message outside their team. If they need something from another team, they ask their lead — who coordinates via the lead channel.
 
 ## Configuration
 
