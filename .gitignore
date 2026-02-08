@@ -1,0 +1,6 @@
+node_modules/
+build/
+test-output/
+.DS_Store
+*.tgz
+PLAN.md
