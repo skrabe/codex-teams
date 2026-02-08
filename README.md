@@ -141,20 +141,22 @@ graph TD
       W1["Worker A"]
       W2["Worker B"]
       W3["Worker C"]
-      L <--> W1
-      L <--> W2
-      L <--> W3
+      L -.->|"coordinates via team-comms"| W1
+      L -.->|"coordinates via team-comms"| W2
+      L -.->|"coordinates via team-comms"| W3
     end
 
-    C --> L
-    C --> W1
-    C --> W2
-    C --> W3
+    C -->|runs thread| L
+    C -->|runs thread| W1
+    C -->|runs thread| W2
+    C -->|runs thread| W3
 ```
 
 Behind the scenes:
 
 - Each agent runs as a Codex thread.
+- `Codex CLI -> agent` arrows are runtime execution (thread transport), not team hierarchy.
+- Lead-to-worker dotted arrows are coordination/assignment flow.
 - Communication tools are exposed through an internal `team-comms` MCP server.
 - Agent comms are localhost-only and session-bound with per-agent tokens.
 
