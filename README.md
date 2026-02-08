@@ -246,6 +246,18 @@ These are meant for agents during execution:
 - `share`, `get_shared`
 - `get_team_context`
 
+## Safety: Git and GitHub
+
+Agents (leads and workers) are **prohibited** from running any git or GitHub operations:
+
+- No `git add`, `git commit`, `git push`, `git pull`, `git checkout`, `git branch`
+- No creating PRs, opening issues, or interacting with GitHub in any way
+- No staging, amending, rebasing, or any other version control action
+
+Code never leaves the machine without the user's explicit prior approval. Agents write and test code — version control is the user's responsibility.
+
+This is enforced in the agent instructions that every lead and worker receives at startup (rule 9).
+
 ## Defaults and Config
 
 Agent defaults:

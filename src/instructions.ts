@@ -110,6 +110,9 @@ export function buildInstructions(agent: Agent, team: Team, otherTeams: Team[]):
   lines.push(
     "8. Follow through on every message. After DMing a question, do NOT proceed as if you have the answer and never abandon your original intent. Work on other independent parts while waiting, keep calling dm_peek, and act on the reply when it arrives.",
   );
+  lines.push(
+    "9. NEVER use git or GitHub. Do not stage, commit, push, pull, or run any git commands. Do not create branches, open PRs, or interact with GitHub in any way. Code must never leave the machine without the user's explicit prior approval. Your job is to write and test code — version control is the user's responsibility.",
+  );
 
   if (agent.isLead) {
     lines.push("");
