@@ -2,7 +2,7 @@
 
 Create AI agent teams inside Claude Code, powered by the Codex CLI.
 
-If you can describe a feature, `codex-teams` can spin up a lead + workers to build it in parallel.
+If you can describe a feature or a research question, `codex-teams` can spin up a lead + workers to execute it in parallel.
 
 ## What This Is
 
@@ -11,6 +11,7 @@ If you can describe a feature, `codex-teams` can spin up a lead + workers to bui
 - One-off parallel execution (`dispatch_team`)
 - Fully autonomous missions with a lead coordinating workers (`launch_mission`)
 - Manual team control (create team, message agents, assign tasks, relay outputs)
+- Research sprints (compare options, gather evidence, synthesize findings)
 
 Agents can communicate through:
 
@@ -22,6 +23,7 @@ Agents can communicate through:
 ## Why People Use It
 
 - You want speed: parallelize frontend/backend/test work.
+- You want faster research: split discovery, comparison, and synthesis across agents.
 - You want coordination: a lead agent can assign and unblock workers.
 - You want less micromanagement: workers self-coordinate through structured channels.
 - You still want control: every workflow can be inspected with status/report tools.
@@ -67,8 +69,8 @@ You should see `codex-teams` available.
 | Mode | Best for | Core tool |
 |---|---|---|
 | Manual | You want tight control and step-by-step steering | `create_team` |
-| Dispatch | You want fast parallel fire-and-forget tasks | `dispatch_team` |
-| Mission | You want autonomous lead+worker coordination and optional verification | `launch_mission` |
+| Dispatch | You want fast parallel fire-and-forget coding or research probes | `dispatch_team` |
+| Mission | You want autonomous lead+worker coordination for implementation or research synthesis | `launch_mission` |
 
 ## Copy-Paste Starter Recipes
 
@@ -128,6 +130,39 @@ Then:
 
 1. Call `mission_status` with the returned `missionId` to check progress.
 2. Call `await_mission` when you want a blocking final result.
+
+### Recipe 3: Parallel research sprint (`dispatch_team`)
+
+```json
+{
+  "name": "research-sprint",
+  "workDir": "/absolute/path/to/your/repo",
+  "agents": [
+    {
+      "role": "requirements-researcher",
+      "specialization": "product and user requirements",
+      "task": "Analyze requirements from docs/issues and produce a structured requirements summary with assumptions."
+    },
+    {
+      "role": "technical-researcher",
+      "specialization": "framework docs and implementation options",
+      "task": "Research 2-3 technical approaches, list tradeoffs, and recommend one with rationale."
+    },
+    {
+      "role": "risk-analyst",
+      "specialization": "edge cases and failure modes",
+      "task": "Identify top risks, unknowns, and validation steps before implementation."
+    }
+  ]
+}
+```
+
+What happens:
+
+- Team is created
+- Agents research in parallel
+- You get a merged report for decision-making
+- Team is auto-dissolved
 
 ## Mental Model
 
