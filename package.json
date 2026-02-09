@@ -1,6 +1,6 @@
 {
   "name": "codex-teams",
-  "version": "2.1.0",
+  "version": "2.2.0",
   "description": "MCP server bridging Claude Code and Codex CLI for team-based agent orchestration",
   "type": "module",
   "main": "build/index.js",
