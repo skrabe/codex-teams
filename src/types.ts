@@ -2,7 +2,7 @@ export type AgentStatus = "idle" | "working" | "error";
 export type TaskStatus = "pending" | "in-progress" | "completed";
 export type ApprovalPolicy = "untrusted" | "on-request" | "on-failure" | "never";
 export type SandboxMode = "read-only" | "workspace-write" | "danger-full-access";
-export type ReasoningEffort = "xhigh" | "high" | "medium" | "low";
+export type ReasoningEffort = "xhigh" | "high" | "medium" | "low" | "minimal";
 
 export interface AgentConfig {
   role: string;

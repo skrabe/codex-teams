@@ -17,14 +17,20 @@ export function toolJson(data: unknown) {
   };
 }
 
-export const WORKER_TIMEOUT_MS = 15 * 60 * 1000;
+export const WORKER_TIMEOUT_MS = 30 * 60 * 1000;
 
-export function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+export function withTimeout<T>(
+  fn: (signal: AbortSignal) => Promise<T>,
+  ms: number,
+  label: string,
+): Promise<T> {
+  const controller = new AbortController();
+  const promise = fn(controller.signal);
   return new Promise((resolve, reject) => {
-    const timer = setTimeout(
-      () => reject(new Error(`${label} timed out after ${Math.round(ms / 1000)}s`)),
-      ms,
-    );
+    const timer = setTimeout(() => {
+      controller.abort();
+      reject(new Error(`${label} timed out after ${Math.round(ms / 1000)}s`));
+    }, ms);
     promise.then(
       (val) => {
         clearTimeout(timer);

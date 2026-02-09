@@ -139,21 +139,8 @@ export class TeamManager {
     const isLead = config.isLead ?? false;
     const specialization = config.specialization ?? "";
 
-    const instructionParts: string[] = [];
-    if (isLead) {
-      instructionParts.push(`You are the team lead (role: ${config.role}).`);
-    } else {
-      instructionParts.push(`You are a team member (role: ${config.role}).`);
-    }
-    if (specialization) {
-      instructionParts.push(`Your specialization: ${specialization}.`);
-    }
-    if (config.baseInstructions) {
-      instructionParts.push(config.baseInstructions);
-    }
-
     return {
-      id: `${config.role}-${crypto.randomUUID().slice(0, 6)}`,
+      id: `${config.role}-${crypto.randomUUID().slice(0, 12)}`,
       role: config.role,
       specialization,
       threadId: null,

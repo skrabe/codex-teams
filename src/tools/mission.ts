@@ -154,25 +154,27 @@ ${teammateList || "  (none — you are the only worker)"}
    "I looked at the project structure — here's what I found: [summary]. Relevant for [reason]."
 
 2. ONCE THE TEAM AGREES — EXECUTE WITH CONFIDENCE
-   You're a senior engineer. Once the approach is agreed, own your piece. Make decisions within
-   your scope without asking permission. But stay aware of how your work connects to others'.
+   You're a senior engineer. Own your piece. Make decisions within your scope without asking permission.
+   But stay aware of how your work connects to others'.
 
-3. THINK OUT LOUD WHILE YOU WORK
-   - Share reasoning at decision points: "Going with X over Y because [reason]."
-   - Flag cross-cutting concerns immediately: "Heads up @${lead.id}, I found [thing] in the
-     codebase — this affects [teammate]'s work too."
-   - When unsure about something in a teammate's area, ask THEM directly:
-     "Hey @teammate, what format are you using for X? Want to make sure we're aligned."
+3. NARRATE YOUR WORK AS YOU GO
+   Your teammates can't see your screen. The only way they know what you're doing is group_chat.
+   Post at natural breakpoints — don't go dark and dump a final report:
+   - Starting a new area: "Diving into the auth module — 6 files to review"
+   - Mid-progress: "3 of 6 files checked. Found 2 using deprecated API so far"
+   - Key discovery: "Config parser on line 89 silently swallows errors — this looks like our bug. @teammate, does this affect your area?"
+   - Decision point: "Going with X over Y because [reason]"
+   - Producing an artifact: call share() IMMEDIATELY with context, don't wait until the end
+   - Stuck or unsure: ask your teammate directly, not just the lead
 
-4. HELP YOUR TEAMMATES
-   - Answer questions in group_chat if you know the answer — don't wait for the lead.
-   - If you finish early: "Done with my piece. @teammate, need a hand with anything?"
-   - When a teammate shares work that touches your area, review it and give feedback.
+   When you read a teammate's message, RESPOND to it. Connect findings, add context, push back.
+   Silent reading is wasted communication.
 
-5. WHEN YOU FINISH
-   - Call share() with your deliverable. Include context: what you built, key decisions, gotchas.
-   - Ask for a sanity check: "Finished X. @teammate, do the interfaces match what you expect?"
-   - If everything is done and no one needs help, say so in group_chat.
+4. HELP YOUR TEAMMATES AND WRAP UP
+   - Answer questions if you know the answer — don't wait for the lead.
+   - If you finish early: "Done with my piece. @teammate, need a hand?"
+   - share() your final deliverable with what you built, key decisions, and gotchas.
+   - Check if your work integrates with teammates' work before declaring done.
 
 Stay responsive: peek for messages after every tool call (dm_peek + group_chat_peek). A teammate
 may need you right now. Full communication guidelines are in your base instructions.
@@ -264,14 +266,14 @@ async function runMission(
 
     const leadPrompt = buildLeadPrompt(mission, team, workers, lead);
     const leadPromise = withTimeout(
-      codex.sendToAgent(lead, leadPrompt),
+      (signal) => codex.sendToAgent(lead, leadPrompt, signal),
       WORKER_TIMEOUT_MS,
       `Lead ${lead.id}`,
     );
 
     const workerPromises = workers.map((worker) => {
       const workerPrompt = buildWorkerPrompt(mission, team, worker, lead, workers);
-      return withTimeout(codex.sendToAgent(worker, workerPrompt), WORKER_TIMEOUT_MS, `Worker ${worker.id}`)
+      return withTimeout((signal) => codex.sendToAgent(worker, workerPrompt, signal), WORKER_TIMEOUT_MS, `Worker ${worker.id}`)
         .then((output) => ({
           agentId: worker.id,
           role: worker.role,
@@ -371,15 +373,17 @@ async function runMission(
     mission.comms = {
       groupChat: messages.getTeamChatMessages(mission.teamId),
       dms: messages.getAllDmMessages(agentIds),
-      leadChat: messages.getLeadChatMessages(),
+      leadChat: messages.getLeadChatMessages(agentIds),
       sharedArtifacts: messages.getSharedArtifacts(mission.teamId),
     };
     messages.dissolveTeamWithAgents(mission.teamId, agentIds);
     state.dissolveTeam(mission.teamId);
+
+    setTimeout(() => missions.delete(mission.id), 30 * 60 * 1000).unref();
   }
 }
 
-function waitForMission(missionId: string, pollMs = 3000, timeoutMs = 600000): Promise<MissionState> {
+function waitForMission(missionId: string, pollMs = 3000, timeoutMs = 3600000): Promise<MissionState> {
   return new Promise((resolve, reject) => {
     const start = Date.now();
     const check = () => {
@@ -418,7 +422,7 @@ export function registerMissionTools(
                 .optional()
                 .describe("Sandbox mode"),
               reasoningEffort: z
-                .enum(["xhigh", "high", "medium", "low"])
+                .enum(["xhigh", "high", "medium", "low", "minimal"])
                 .optional()
                 .describe("Reasoning effort level (default: xhigh for lead, high for workers)"),
             }),
@@ -489,10 +493,11 @@ export function registerMissionTools(
 
         missions.set(missionId, mission);
 
-        runMission(mission, team, codex, state, messages).catch((err) => {
+        const missionOp = runMission(mission, team, codex, state, messages).catch((err) => {
           mission.phase = "error";
           mission.error = err instanceof Error ? err.message : String(err);
         });
+        codex.trackOp(missionOp);
 
         return {
           content: [
@@ -570,12 +575,12 @@ export function registerMissionTools(
       inputSchema: {
         missionId: z.string().describe("Mission ID returned by launch_mission"),
         pollIntervalMs: z.number().optional().describe("Poll interval in ms (default: 3000)"),
-        timeoutMs: z.number().optional().describe("Timeout in ms (default: 600000 = 10min)"),
+        timeoutMs: z.number().optional().describe("Timeout in ms (default: 3600000 = 60min)"),
       },
     },
     async ({ missionId, pollIntervalMs, timeoutMs }) => {
       try {
-        const mission = await waitForMission(missionId, pollIntervalMs ?? 3000, timeoutMs ?? 600000);
+        const mission = await waitForMission(missionId, pollIntervalMs ?? 3000, timeoutMs ?? 3600000);
 
         const formatMsg = (m: Message) => ({
           from: `${m.fromRole} (${m.from})`,
@@ -652,7 +657,7 @@ export function registerMissionTools(
           text: m.text,
           time: m.timestamp.toISOString(),
         })),
-        leadChat: messages.getLeadChatMessages().map((m) => ({
+        leadChat: messages.getLeadChatMessages(agentIds).map((m) => ({
           from: `${m.fromRole} (${m.from})`,
           text: m.text,
           time: m.timestamp.toISOString(),

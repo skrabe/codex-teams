@@ -104,7 +104,6 @@ export class MessageSystem {
         const matching = unread.filter((m) => m.from === fromAgentId);
         if (matching.length > 0) {
           allUnread.push(...matching);
-          channel.readCursors.set(agentId, channel.messages.length);
         }
       } else {
         allUnread.push(...this.readMessages(channel, agentId));
@@ -151,8 +150,10 @@ export class MessageSystem {
     return [...(this.teamChats.get(teamId)?.messages ?? [])];
   }
 
-  getLeadChatMessages(): Message[] {
-    return [...this.leadChat.messages];
+  getLeadChatMessages(agentIds?: string[]): Message[] {
+    if (!agentIds) return [...this.leadChat.messages];
+    const agentSet = new Set(agentIds);
+    return this.leadChat.messages.filter((m) => agentSet.has(m.from));
   }
 
   getAllDmMessages(agentIds: string[]): Message[] {
@@ -182,7 +183,7 @@ export class MessageSystem {
     const agentSet = new Set(agentIds);
     for (const key of this.dms.keys()) {
       const [a, b] = key.split("\0");
-      if (agentSet.has(a) || agentSet.has(b)) {
+      if (agentSet.has(a) && agentSet.has(b)) {
         this.dms.delete(key);
       }
     }

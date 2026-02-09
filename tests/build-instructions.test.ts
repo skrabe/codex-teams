@@ -128,11 +128,11 @@ describe("buildInstructions", () => {
     assert.ok(instr.includes("group_chat"));
     assert.ok(instr.includes("dm_peek"));
     assert.ok(instr.includes("PLANNING"));
-    assert.ok(instr.includes("THINKING OUT LOUD"));
+    assert.ok(instr.includes("WORKING OUT LOUD"));
     assert.ok(instr.includes("share()"));
     assert.ok(instr.includes("get_shared"));
-    assert.ok(instr.includes("Stay responsive"));
-    assert.ok(instr.includes("Share reasoning"));
+    assert.ok(instr.includes("STAYING RESPONSIVE"));
+    assert.ok(instr.includes("ANTI-PATTERNS"));
   });
 
   it("includes LEAD RESPONSIBILITIES for leads", () => {

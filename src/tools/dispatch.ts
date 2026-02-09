@@ -54,7 +54,7 @@ export function registerDispatchTools(
 
         const results = await Promise.allSettled(
           agentList.map((agent, i) =>
-            withTimeout(codex.sendToAgent(agent, tasks[i]), WORKER_TIMEOUT_MS, `Agent ${agent.id}`),
+            withTimeout((signal) => codex.sendToAgent(agent, tasks[i], signal), WORKER_TIMEOUT_MS, `Agent ${agent.id}`),
           ),
         );
 

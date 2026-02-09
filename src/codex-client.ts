@@ -99,11 +99,11 @@ export class CodexClientManager {
     }
   }
 
-  async sendToAgent(agent: Agent, message: string): Promise<string> {
+  async sendToAgent(agent: Agent, message: string, signal?: AbortSignal): Promise<string> {
     const prev = this.agentLocks.get(agent.id) ?? Promise.resolve();
     const run = prev.then(
-      () => this.doSendToAgent(agent, message),
-      () => this.doSendToAgent(agent, message),
+      () => this.doSendToAgent(agent, message, signal),
+      () => this.doSendToAgent(agent, message, signal),
     );
     this.agentLocks.set(
       agent.id,
@@ -112,7 +112,7 @@ export class CodexClientManager {
     return run;
   }
 
-  private async doSendToAgent(agent: Agent, message: string): Promise<string> {
+  private async doSendToAgent(agent: Agent, message: string, signal?: AbortSignal): Promise<string> {
     if (!this.connected) {
       await this.reconnect();
     }
@@ -153,6 +153,7 @@ export class CodexClientManager {
 
         result = await this.client.callTool({ name: "codex", arguments: args }, undefined, {
           timeout: CODEX_TIMEOUT_MS,
+          signal,
         });
 
         const structured = (result as Record<string, unknown>).structuredContent as
@@ -172,7 +173,7 @@ export class CodexClientManager {
             },
           },
           undefined,
-          { timeout: CODEX_TIMEOUT_MS },
+          { timeout: CODEX_TIMEOUT_MS, signal },
         );
       }
 

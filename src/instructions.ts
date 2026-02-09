@@ -39,7 +39,7 @@ export function buildInstructions(agent: Agent, team: Team, otherTeams: Team[]):
   lines.push("  dm_send(myAgentId, toAgentId, message) — Send a direct message");
   lines.push("  dm_read(myAgentId) — Read your unread DMs");
   lines.push("  dm_peek(myAgentId) — Check unread DM count");
-  lines.push("  share(myAgentId, data) — Share info/file paths with the team");
+  lines.push("  share(myAgentId, data) — Share discoveries/artifacts with team AS YOU FIND THEM (not just at the end)");
   lines.push("  get_shared(myAgentId) — See everything the team has shared");
   lines.push(
     "  get_team_context(myAgentId) — See all teammates, their roles, specializations, status, and tasks",
@@ -74,22 +74,23 @@ export function buildInstructions(agent: Agent, team: Team, otherTeams: Team[]):
   lines.push("  contribute your thinking. If you have relevant context or expertise, share it.");
   lines.push("  No one should start coding until the team has a shared understanding of the approach.");
   lines.push("");
-  lines.push("THINKING OUT LOUD (while you work):");
-  lines.push('  Share reasoning at decision points: "Going with X over Y because Z."');
-  lines.push("  When you discover something that affects a teammate, tell them right away:");
-  lines.push(
-    '  "Heads up @teammate, I found [thing] — this might change your approach."',
-  );
-  lines.push(
-    "  When you're unsure about something in a teammate's area, ask THEM directly, not just the lead.",
-  );
+  lines.push("WORKING OUT LOUD (while you work):");
+  lines.push("  Narrate your work like a senior engineer in Slack. Your team can't see your screen.");
+  lines.push("  Post to group_chat when:");
+  lines.push("  - You find something unexpected or relevant to a teammate — tell them immediately");
+  lines.push('  - You finish a chunk of work — "checked 3 of 6 modules, found X so far"');
+  lines.push('  - You choose between approaches — "going with X over Y because Z"');
+  lines.push("  - You're stuck or unsure about something in a teammate's area — ask THEM directly");
+  lines.push("  - You produce any artifact — share() it immediately with context, don't hoard until the end");
+  lines.push("");
+  lines.push("  When you read a teammate's message, RESPOND — don't just absorb:");
+  lines.push('  - Connect it to your work: "that relates to what I\'m seeing in [area]"');
+  lines.push('  - Add context: "I saw something similar in [file]"');
+  lines.push("  - Push back if you disagree: \"I'd go differently — here's why\"");
   lines.push("");
   lines.push("STAYING RESPONSIVE (always):");
-  lines.push("  After every tool call, call dm_peek and group_chat_peek. If unread > 0, read immediately.");
-  lines.push(
-    "  This isn't bureaucracy — a teammate may be waiting on you right now. A quick peek costs",
-  );
-  lines.push("  nothing; ignoring a question can block someone for minutes.");
+  lines.push("  After every tool call, peek for messages (dm_peek + group_chat_peek). If unread > 0, read and respond immediately.");
+  lines.push("  Silent reading is wasted communication — if a message is relevant to you, react to it.");
   lines.push("");
   lines.push("HELPING EACH OTHER (when you can):");
   lines.push("  If a teammate posts a question you can answer, answer it — don't wait for the lead.");
@@ -97,14 +98,8 @@ export function buildInstructions(agent: Agent, team: Team, otherTeams: Team[]):
   lines.push("  When a teammate shares work that touches your area, look at it and give feedback.");
   lines.push("");
   lines.push("WRAPPING UP (when you finish):");
-  lines.push(
-    "  Share deliverables via share() with context — not just file paths, but what you built,",
-  );
-  lines.push("  key decisions you made, and anything the next person should know.");
-  lines.push(
-    '  Ask for a quick review: "Just finished X. @teammate, can you sanity-check that the',
-  );
-  lines.push('  interface matches what you expect?"');
+  lines.push("  share() your final deliverable with context: what you built, key decisions, gotchas.");
+  lines.push("  Check if your work integrates with teammates' work before declaring done.");
   lines.push("");
   lines.push("--- WHAT MAKES A GOOD MESSAGE ---");
   lines.push("");
@@ -152,6 +147,18 @@ export function buildInstructions(agent: Agent, team: Team, otherTeams: Team[]):
   );
   lines.push(
     "9. NEVER use git or GitHub. Do not stage, commit, push, pull, or run any git commands. Do not create branches, open PRs, or interact with GitHub in any way. Code must never leave the machine without the user's explicit prior approval. Your job is to write and test code — version control is the user's responsibility.",
+  );
+
+  lines.push("");
+  lines.push("--- ANTI-PATTERNS ---");
+  lines.push(
+    "GOING DARK: Working your entire task without posting a single message. Your team has zero visibility into what you're finding.",
+  );
+  lines.push(
+    "DUMP AND RUN: Sharing a massive final artifact with no context about what you found, why you made certain choices, or what the next person should know.",
+  );
+  lines.push(
+    "IGNORING MESSAGES: Reading a teammate's finding or question and not responding. Even \"acknowledged, doesn't affect my work\" is better than silence.",
   );
 
   if (agent.isLead) {

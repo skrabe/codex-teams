@@ -211,18 +211,29 @@ describe("MessageSystem", () => {
       assert.equal(empty.length, 0);
     });
 
-    it("filtered read only advances cursor for channels with matching messages", () => {
+    it("filtered read is non-consuming — does not advance cursor", () => {
       ms.dmSend("agent-a", "agent-c", "dev", "from a");
       ms.dmSend("agent-b", "agent-c", "tester", "from b");
 
       ms.dmRead("agent-c", "agent-a");
 
       const remaining = ms.dmRead("agent-c");
-      assert.equal(remaining.length, 1);
-      assert.equal(remaining[0].from, "agent-b");
+      assert.equal(remaining.length, 2);
     });
 
-    it("filtered read in same channel excludes self-sent messages from subsequent reads", () => {
+    it("filtered read does not advance cursor — unfiltered read returns all messages", () => {
+      ms.dmSend("agent-a", "agent-c", "dev", "from a");
+      ms.dmSend("agent-b", "agent-c", "tester", "from b");
+
+      const fromA = ms.dmRead("agent-c", "agent-a");
+      assert.equal(fromA.length, 1);
+      assert.equal(fromA[0].text, "from a");
+
+      const remaining = ms.dmRead("agent-c");
+      assert.equal(remaining.length, 2);
+    });
+
+    it("filtered read in same channel is non-consuming for subsequent reads", () => {
       ms.dmSend("agent-a", "agent-b", "dev", "from a");
       ms.dmSend("agent-b", "agent-a", "tester", "from b");
 
@@ -231,7 +242,8 @@ describe("MessageSystem", () => {
       assert.equal(fromA[0].text, "from a");
 
       const remaining = ms.dmRead("agent-b");
-      assert.equal(remaining.length, 0);
+      assert.equal(remaining.length, 1);
+      assert.equal(remaining[0].text, "from a");
     });
 
     it("peek returns total unread DM count across all senders", () => {
@@ -349,6 +361,20 @@ describe("MessageSystem", () => {
       assert.equal(ms.leadChatPeek("lead-c"), 0);
     });
 
+    it("getLeadChatMessages filters by agent IDs", () => {
+      ms.leadChatPost("lead-a", "lead", "team-frontend", "frontend status");
+      ms.leadChatPost("lead-b", "lead", "team-backend", "backend status");
+      ms.leadChatPost("lead-c", "lead", "team-infra", "infra status");
+
+      const filtered = ms.getLeadChatMessages(["lead-a", "lead-c"]);
+      assert.equal(filtered.length, 2);
+      assert.equal(filtered[0].from, "lead-a");
+      assert.equal(filtered[1].from, "lead-c");
+
+      const all = ms.getLeadChatMessages();
+      assert.equal(all.length, 3);
+    });
+
     it("each lead has independent cursor", () => {
       ms.leadChatPost("lead-a", "lead", "t1", "msg");
 
@@ -450,12 +476,11 @@ describe("MessageSystem", () => {
       assert.equal(ms.dmPeek("agent-b"), 0);
     });
 
-    it("cleans up DMs involving team agents with outside agents", () => {
+    it("preserves cross-team DMs when one side dissolves", () => {
       ms.dmSend("agent-a", "agent-x", "dev", "cross-team dm");
       ms.dissolveTeamWithAgents("team1", ["agent-a"]);
 
-      assert.equal(ms.dmPeek("agent-x"), 0);
-      assert.equal(ms.dmPeek("agent-a"), 0);
+      assert.equal(ms.dmPeek("agent-x"), 1);
     });
 
     it("does not affect DMs between unrelated agents", () => {
