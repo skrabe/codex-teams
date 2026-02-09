@@ -91,11 +91,10 @@ describe("MessageSystem", () => {
       assert.equal(t2[0].text, "team2 msg");
     });
 
-    it("poster sees their own message on read", () => {
+    it("poster does not see their own message as unread", () => {
       ms.groupChatPost("team1", "agent-a", "dev", "my msg");
       const msgs = ms.groupChatRead("team1", "agent-a");
-      assert.equal(msgs.length, 1);
-      assert.equal(msgs[0].from, "agent-a");
+      assert.equal(msgs.length, 0);
     });
 
     it("messages have unique IDs", () => {
@@ -158,19 +157,19 @@ describe("MessageSystem", () => {
       ms.dmSend("agent-b", "agent-a", "tester", "hi a");
 
       const aReads = ms.dmRead("agent-a");
-      assert.equal(aReads.length, 2);
-      assert.equal(aReads[0].text, "hi b");
-      assert.equal(aReads[1].text, "hi a");
+      assert.equal(aReads.length, 1);
+      assert.equal(aReads[0].text, "hi a");
 
       const bReads = ms.dmRead("agent-b");
-      assert.equal(bReads.length, 2);
+      assert.equal(bReads.length, 1);
+      assert.equal(bReads[0].text, "hi b");
     });
 
     it("each agent has independent DM cursor", () => {
       ms.dmSend("agent-a", "agent-b", "dev", "msg1");
 
       const aReads = ms.dmRead("agent-a");
-      assert.equal(aReads.length, 1);
+      assert.equal(aReads.length, 0);
 
       const bReads = ms.dmRead("agent-b");
       assert.equal(bReads.length, 1);
@@ -182,8 +181,7 @@ describe("MessageSystem", () => {
       assert.equal(aReads2[0].text, "msg2");
 
       const bReads2 = ms.dmRead("agent-b");
-      assert.equal(bReads2.length, 1);
-      assert.equal(bReads2[0].text, "msg2");
+      assert.equal(bReads2.length, 0);
     });
 
     it("read with fromAgentId filter returns only messages from that sender", () => {
@@ -224,6 +222,18 @@ describe("MessageSystem", () => {
       assert.equal(remaining[0].from, "agent-b");
     });
 
+    it("filtered read in same channel excludes self-sent messages from subsequent reads", () => {
+      ms.dmSend("agent-a", "agent-b", "dev", "from a");
+      ms.dmSend("agent-b", "agent-a", "tester", "from b");
+
+      const fromA = ms.dmRead("agent-b", "agent-a");
+      assert.equal(fromA.length, 1);
+      assert.equal(fromA[0].text, "from a");
+
+      const remaining = ms.dmRead("agent-b");
+      assert.equal(remaining.length, 0);
+    });
+
     it("peek returns total unread DM count across all senders", () => {
       ms.dmSend("agent-a", "agent-c", "dev", "msg1");
       ms.dmSend("agent-b", "agent-c", "tester", "msg2");
@@ -247,19 +257,18 @@ describe("MessageSystem", () => {
       ms.dmSend("agent-a", "agent-c", "dev", "a-to-c");
       ms.dmSend("agent-b", "agent-c", "tester", "b-to-c");
 
-      // agent-b is in two channels: a↔b (1 msg) and b↔c (1 msg)
+      // agent-b: sees a-to-b (from a), but not b-to-c (own message)
       const bReads = ms.dmRead("agent-b");
-      assert.equal(bReads.length, 2);
-      assert.ok(bReads.some((m) => m.text === "a-to-b"));
-      assert.ok(bReads.some((m) => m.text === "b-to-c"));
+      assert.equal(bReads.length, 1);
+      assert.equal(bReads[0].text, "a-to-b");
 
-      // agent-c is in two channels: a↔c (1 msg) and b↔c (1 msg)
+      // agent-c: sees a-to-c (from a) and b-to-c (from b)
       const cReads = ms.dmRead("agent-c");
       assert.equal(cReads.length, 2);
 
-      // agent-a is in two channels: a↔b (1 msg) and a↔c (1 msg)
+      // agent-a: sent all messages, no unread from others
       const aReads = ms.dmRead("agent-a");
-      assert.equal(aReads.length, 2);
+      assert.equal(aReads.length, 0);
 
       // agent-d has no DMs
       const dReads = ms.dmRead("agent-d");
@@ -281,12 +290,12 @@ describe("MessageSystem", () => {
       ms.dmSend("agent-b", "agent-a", "tester", "reply1");
       ms.dmSend("agent-a", "agent-b", "dev", "msg3");
 
+      // B sees only A's messages (own reply1 excluded)
       const bReads = ms.dmRead("agent-b");
-      assert.equal(bReads.length, 4);
+      assert.equal(bReads.length, 3);
       assert.equal(bReads[0].text, "msg1");
       assert.equal(bReads[1].text, "msg2");
-      assert.equal(bReads[2].text, "reply1");
-      assert.equal(bReads[3].text, "msg3");
+      assert.equal(bReads[2].text, "msg3");
     });
 
     it("agent reads only their DMs, not others", () => {
@@ -301,9 +310,9 @@ describe("MessageSystem", () => {
       assert.equal(dReads.length, 1);
       assert.equal(dReads[0].text, "private for d");
 
+      // A sent the message — nothing unread for A
       const aReads = ms.dmRead("agent-a");
-      assert.equal(aReads.length, 1);
-      assert.equal(aReads[0].text, "private for b");
+      assert.equal(aReads.length, 0);
     });
   });
 
@@ -312,13 +321,11 @@ describe("MessageSystem", () => {
       ms.leadChatPost("lead-a", "lead", "team-frontend", "frontend ready");
       ms.leadChatPost("lead-b", "lead", "team-backend", "backend ready");
 
+      // lead-a sees only lead-b's message (own excluded)
       const msgs = ms.leadChatRead("lead-a");
-      assert.equal(msgs.length, 2);
-      assert.equal(msgs[0].from, "lead-a");
-      assert.ok(msgs[0].text.includes("[team-frontend]"));
-      assert.ok(msgs[0].text.includes("frontend ready"));
-      assert.equal(msgs[1].from, "lead-b");
-      assert.ok(msgs[1].text.includes("[team-backend]"));
+      assert.equal(msgs.length, 1);
+      assert.equal(msgs[0].from, "lead-b");
+      assert.ok(msgs[0].text.includes("[team-backend]"));
     });
 
     it("read returns only unread", () => {
@@ -350,11 +357,10 @@ describe("MessageSystem", () => {
       assert.equal(forC.length, 1);
     });
 
-    it("lead sees own messages", () => {
+    it("lead does not see own messages as unread", () => {
       ms.leadChatPost("lead-a", "lead", "t1", "my msg");
       const msgs = ms.leadChatRead("lead-a");
-      assert.equal(msgs.length, 1);
-      assert.equal(msgs[0].from, "lead-a");
+      assert.equal(msgs.length, 0);
     });
   });
 
@@ -477,11 +483,11 @@ describe("MessageSystem", () => {
       ms.leadChatPost("lead-1", "lead", "team1", "auth in progress");
       ms.shareArtifact("team1", "dev-1", "src/auth.ts");
 
-      assert.equal(ms.groupChatPeek("team1", "dev-1"), 2);
+      assert.equal(ms.groupChatPeek("team1", "dev-1"), 1);
       assert.equal(ms.dmPeek("dev-1"), 1);
 
       const chatMsgs = ms.groupChatRead("team1", "dev-1");
-      assert.equal(chatMsgs.length, 2);
+      assert.equal(chatMsgs.length, 1);
 
       const dms = ms.dmRead("dev-1");
       assert.equal(dms.length, 1);
@@ -490,8 +496,9 @@ describe("MessageSystem", () => {
       const artifacts = ms.getSharedArtifacts("team1");
       assert.equal(artifacts.length, 1);
 
+      // lead-1 posted, so own message is not unread
       const leadMsgs = ms.leadChatRead("lead-1");
-      assert.equal(leadMsgs.length, 1);
+      assert.equal(leadMsgs.length, 0);
     });
 
     it("high concurrency DMs from many agents to one", () => {

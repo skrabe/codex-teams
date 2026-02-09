@@ -4,8 +4,9 @@ import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { TeamManager } from "../state.js";
 import type { CodexClientManager } from "../codex-client.js";
-import type { MessageSystem } from "../messages.js";
+import type { Message, MessageSystem } from "../messages.js";
 import type { Agent, Team } from "../types.js";
+import { withTimeout, WORKER_TIMEOUT_MS } from "../tool-utils.js";
 
 type MissionPhase = "executing" | "verifying" | "fixing" | "reviewing" | "completed" | "error";
 
@@ -36,6 +37,12 @@ interface MissionState {
   verificationLog: VerificationAttempt[];
   finalReport: string;
   error?: string;
+  comms?: {
+    groupChat: Message[];
+    dms: Message[];
+    leadChat: Message[];
+    sharedArtifacts: Array<{ from: string; data: string; timestamp: Date }>;
+  };
 }
 
 const missions = new Map<string, MissionState>();
@@ -54,28 +61,52 @@ ${mission.objective}
 ${workerList}
 
 === WHAT TO DO RIGHT NOW ===
-Your workers are starting up simultaneously alongside you. They will be reading group_chat for their task assignments.
+Your workers are starting up alongside you. They'll be reading group_chat and exploring the codebase.
+Your job is to lead a brief planning discussion, then coordinate execution.
 
-1. POST TASK ASSIGNMENTS IMMEDIATELY via group_chat_post. Address each worker by their ID so they know which task is theirs. Post ALL assignments in a SINGLE message so every worker can see the full task breakdown and knows who is responsible for what. Example format:
+1. OPEN THE PLANNING DISCUSSION
+   Use group_chat_post to share your initial analysis. Don't assign tasks yet — propose a plan and invite input:
+   - Break down what needs to happen and why
+   - Propose how to divide the work (based on worker roles/specializations)
+   - Call out dependencies, risks, and open questions
+   - Ask for input: "What am I missing? Does this breakdown make sense?"
 
-   @worker-id-1: [Detailed task description, expected deliverables, files to modify]
-   @worker-id-2: [Detailed task description, expected deliverables, files to modify]
+   Example:
+   "Here's my read on this mission: we need [A], [B], and [C].
 
-2. MONITOR PROGRESS: After posting assignments, periodically call group_chat_read and dm_read to track worker progress. Workers will post updates and may DM you with questions or blockers.
+   I'm thinking @worker-1 takes [A] since they specialize in [X], and @worker-2 handles [B].
+   [C] depends on both, so we'll tackle it once [A] and [B] are done.
 
-3. RESPOND TO EVERY DM PROMPTLY. A blocked worker is a wasted worker. If someone asks a question, answer it. If someone reports a problem, help them solve it.
+   Concerns:
+   - [risk 1] — @worker-1, can you check this first?
+   - [open question] — @worker-2, any thoughts?
 
-4. REVIEW SHARED ARTIFACTS: Workers will call share() when they complete deliverables. Use get_shared to review their work.
+   Let's discuss before we start coding."
 
-5. COORDINATE DEPENDENCIES: If worker B needs worker A's output, monitor A's progress and notify B when A shares their deliverable.
+2. FACILITATE THE DISCUSSION
+   Read responses. Workers may suggest changes, raise concerns, or share context from their
+   codebase exploration. Incorporate their input. If workers disagree, help them find common ground.
+   When the team reaches consensus, post a clear summary with finalized assignments:
+   "OK, here's what we agreed: [final plan]. @worker-1: [task]. @worker-2: [task]. Let's go."
+   Keep the discussion brief — 2-3 rounds is usually enough. The goal is alignment, not perfection.
 
-6. PROACTIVELY DM WORKERS: Don't wait for workers to come to you. If you notice ambiguity in their task, DM them with clarifications. If one worker's output affects another, DM them both.
+3. DURING EXECUTION
+   - Help resolve ambiguity and conflicts quickly.
+   - Connect workers who need to coordinate: "@A, @B just shared their schema — check get_shared."
+   - Answer questions promptly — every minute you delay is a minute someone wastes.
+   - If you notice something that affects multiple workers, raise it in group_chat.
+   - Don't micromanage. Workers are senior engineers — trust them within their scope.
 
-7. CHECK DMs CONSTANTLY: After every tool call, call dm_peek and group_chat_peek. If unread > 0, read immediately. Workers may be blocked waiting on your response — every minute you delay is a minute they waste.
+4. ENCOURAGE PEER INTERACTION
+   You don't need to be in the middle of every conversation. If worker A has a question
+   about worker B's area, they should talk directly. Step in only when they need a tiebreaker
+   or the discussion affects the whole team.
 
-8. CROSS-TEAM COORDINATION: If other teams exist, use lead_chat_post/lead_chat_read/lead_chat_peek to communicate with other team leads. Check lead_chat_peek periodically — another lead may need to coordinate with you.
+5. CROSS-TEAM COORDINATION
+   If other teams exist, use lead_chat_post/lead_chat_read/lead_chat_peek to coordinate
+   with other team leads. Check lead_chat_peek periodically.
 
-You will receive a follow-up message after all workers have completed their tasks, asking you to compile a final report.
+You will receive a follow-up message after all workers complete, asking you to compile a final report.
 
 Follow the work methodology in your base instructions.
 
@@ -95,8 +126,10 @@ function buildWorkerPrompt(
     .map((w) => `  - @${w.id} (${w.role}${w.specialization ? " — " + w.specialization : ""})`)
     .join("\n");
 
-  return `=== YOUR ASSIGNMENT ===
+  return `=== YOUR ROLE ===
 You are ${worker.id} (${worker.role}${worker.specialization ? " — " + worker.specialization : ""}).
+You're a senior engineer on this team — not just a task executor. You think about the problem,
+contribute ideas, and help your teammates succeed.
 
 === MISSION OBJECTIVE ===
 ${mission.objective}
@@ -107,29 +140,42 @@ Teammates:
 ${teammateList || "  (none — you are the only worker)"}
 
 === WHAT TO DO RIGHT NOW ===
-1. Call group_chat_read to get your task assignment from the lead (@${lead.id}). Look for a message addressing @${worker.id}. READ THE FULL MESSAGE — it contains ALL workers' assignments, so you know who is responsible for what.
 
-2. If no assignment has been posted yet, start by exploring the codebase to understand the project structure. Then check group_chat_read again after a minute.
+1. JOIN THE PLANNING DISCUSSION
+   Call group_chat_read to check for the lead's plan. The lead (@${lead.id}) will post an
+   initial plan. While waiting, start exploring the codebase to build context. When the plan
+   appears, engage with it:
+   - React to the proposed breakdown. Does it make sense? Would you approach it differently?
+   - Speak up about your area: "I've looked at the code and we should watch out for X."
+   - Raise concerns early: "If we do it that way, we'll hit a problem with Y. What about Z?"
+   - Volunteer for work that matches your strengths.
 
-3. Once you have your assignment, EXECUTE WITH FULL AUTONOMY. You are a senior engineer — bias to action. Don't wait for permission to make decisions within your task scope.
+   If the lead hasn't posted yet, share what you find from your exploration:
+   "I looked at the project structure — here's what I found: [summary]. Relevant for [reason]."
 
-=== COMMUNICATION PROTOCOL ===
-- POST PROGRESS to group_chat after every meaningful step ("Completed API endpoint for /users", "Found bug in auth middleware, fixing now").
-- DM the lead (@${lead.id}) immediately if you hit a blocker, need clarification, or need a decision that's outside your scope. When in doubt, DM the lead — asking takes seconds, redoing takes hours.
-- Before searching for non-trivial information outside your scope, call get_team_context to check if any agent (your team or another) covers that area. Same-team → DM them directly. Other team → DM your lead to relay via lead_chat.
-- Follow through on every message. After DMing a question, do NOT proceed as if you have the answer and never abandon your original intent. Work on other independent parts while waiting, keep calling dm_peek, and act on the reply when it arrives.
+2. ONCE THE TEAM AGREES — EXECUTE WITH CONFIDENCE
+   You're a senior engineer. Once the approach is agreed, own your piece. Make decisions within
+   your scope without asking permission. But stay aware of how your work connects to others'.
 
-CRITICAL — CHECK DMs CONSTANTLY:
-After EVERY tool call (file read, file write, shell command, anything), call dm_peek and group_chat_peek.
-If unread > 0, call dm_read / group_chat_read BEFORE your next action.
-Your lead may have sent you a correction, a teammate may need your help, or priorities may have changed.
-A missed DM can mean hours of wasted work. Make peek calls a reflexive habit.
+3. THINK OUT LOUD WHILE YOU WORK
+   - Share reasoning at decision points: "Going with X over Y because [reason]."
+   - Flag cross-cutting concerns immediately: "Heads up @${lead.id}, I found [thing] in the
+     codebase — this affects [teammate]'s work too."
+   - When unsure about something in a teammate's area, ask THEM directly:
+     "Hey @teammate, what format are you using for X? Want to make sure we're aligned."
 
-=== WHEN YOU FINISH ===
-1. Call share() with your deliverable (file paths, summaries, test results).
-2. Post "COMPLETED: [one-line summary of what you delivered]" to group_chat.
+4. HELP YOUR TEAMMATES
+   - Answer questions in group_chat if you know the answer — don't wait for the lead.
+   - If you finish early: "Done with my piece. @teammate, need a hand with anything?"
+   - When a teammate shares work that touches your area, review it and give feedback.
 
-Follow the work methodology in your base instructions.
+5. WHEN YOU FINISH
+   - Call share() with your deliverable. Include context: what you built, key decisions, gotchas.
+   - Ask for a sanity check: "Finished X. @teammate, do the interfaces match what you expect?"
+   - If everything is done and no one needs help, say so in group_chat.
+
+Stay responsive: peek for messages after every tool call (dm_peek + group_chat_peek). A teammate
+may need you right now. Full communication guidelines are in your base instructions.
 
 Your agent ID: ${worker.id}
 Team ID: ${team.id}`;
@@ -217,12 +263,15 @@ async function runMission(
     mission.phase = "executing";
 
     const leadPrompt = buildLeadPrompt(mission, team, workers, lead);
-    const leadPromise = codex.sendToAgent(lead, leadPrompt);
+    const leadPromise = withTimeout(
+      codex.sendToAgent(lead, leadPrompt),
+      WORKER_TIMEOUT_MS,
+      `Lead ${lead.id}`,
+    );
 
     const workerPromises = workers.map((worker) => {
       const workerPrompt = buildWorkerPrompt(mission, team, worker, lead, workers);
-      return codex
-        .sendToAgent(worker, workerPrompt)
+      return withTimeout(codex.sendToAgent(worker, workerPrompt), WORKER_TIMEOUT_MS, `Worker ${worker.id}`)
         .then((output) => ({
           agentId: worker.id,
           role: worker.role,
@@ -319,6 +368,12 @@ async function runMission(
     mission.error = error instanceof Error ? error.message : String(error);
   } finally {
     const agentIds = [mission.leadId, ...mission.workerIds];
+    mission.comms = {
+      groupChat: messages.getTeamChatMessages(mission.teamId),
+      dms: messages.getAllDmMessages(agentIds),
+      leadChat: messages.getLeadChatMessages(),
+      sharedArtifacts: messages.getSharedArtifacts(mission.teamId),
+    };
     messages.dissolveTeamWithAgents(mission.teamId, agentIds);
     state.dissolveTeam(mission.teamId);
   }
@@ -362,6 +417,10 @@ export function registerMissionTools(
                 .enum(["read-only", "workspace-write", "danger-full-access"])
                 .optional()
                 .describe("Sandbox mode"),
+              reasoningEffort: z
+                .enum(["xhigh", "high", "medium", "low"])
+                .optional()
+                .describe("Reasoning effort level (default: xhigh for lead, high for workers)"),
             }),
           )
           .describe("Team composition"),
@@ -401,6 +460,7 @@ export function registerMissionTools(
             specialization: t.specialization,
             isLead: t.isLead,
             sandbox: t.sandbox,
+            reasoningEffort: t.reasoningEffort,
             cwd: workDir,
           })),
         );
@@ -517,35 +577,23 @@ export function registerMissionTools(
       try {
         const mission = await waitForMission(missionId, pollIntervalMs ?? 3000, timeoutMs ?? 600000);
 
-        const team = state.listTeams().find((t) => t.id === mission.teamId);
-        const agentIds = [mission.leadId, ...mission.workerIds];
-
-        const comms = {
-          groupChat: team
-            ? messages.getTeamChatMessages(team.id).map((m) => ({
-                from: `${m.fromRole} (${m.from})`,
-                text: m.text,
-                time: m.timestamp.toISOString(),
-              }))
-            : [],
-          dms: messages.getAllDmMessages(agentIds).map((m) => ({
-            from: `${m.fromRole} (${m.from})`,
-            text: m.text,
-            time: m.timestamp.toISOString(),
-          })),
-          leadChat: messages.getLeadChatMessages().map((m) => ({
-            from: `${m.fromRole} (${m.from})`,
-            text: m.text,
-            time: m.timestamp.toISOString(),
-          })),
-          sharedArtifacts: team
-            ? messages.getSharedArtifacts(team.id).map((a) => ({
+        const formatMsg = (m: Message) => ({
+          from: `${m.fromRole} (${m.from})`,
+          text: m.text,
+          time: m.timestamp.toISOString(),
+        });
+        const comms = mission.comms
+          ? {
+              groupChat: mission.comms.groupChat.map(formatMsg),
+              dms: mission.comms.dms.map(formatMsg),
+              leadChat: mission.comms.leadChat.map(formatMsg),
+              sharedArtifacts: mission.comms.sharedArtifacts.map((a) => ({
                 from: a.from,
                 data: a.data,
                 time: a.timestamp.toISOString(),
-              }))
-            : [],
-        };
+              })),
+            }
+          : { groupChat: [], dms: [], leadChat: [], sharedArtifacts: [] };
 
         missions.delete(missionId);
 

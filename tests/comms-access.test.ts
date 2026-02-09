@@ -158,11 +158,12 @@ describe("Comms Access Control (unit)", () => {
       ms.leadChatPost(lead1Id, ctx1.agent.role, ctx1.team.name, "frontend update");
       ms.leadChatPost(lead2Id, ctx2.agent.role, ctx2.team.name, "backend update");
 
+      // Each lead sees only the other's message (own excluded)
       const lead1Reads = ms.leadChatRead(lead1Id);
-      assert.equal(lead1Reads.length, 2);
+      assert.equal(lead1Reads.length, 1);
 
       const lead2Reads = ms.leadChatRead(lead2Id);
-      assert.equal(lead2Reads.length, 2);
+      assert.equal(lead2Reads.length, 1);
     });
 
     it("workers are NOT leads (access control validation)", () => {

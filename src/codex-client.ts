@@ -132,6 +132,8 @@ export class CodexClientManager {
           config.mcp_servers = {
             "team-comms": {
               url: `http://localhost:${this.commsPort}/mcp?agent=${encodeURIComponent(agent.id)}&token=${token}`,
+              startup_timeout_sec: 120,
+              tool_timeout_sec: 60,
             },
           };
         }

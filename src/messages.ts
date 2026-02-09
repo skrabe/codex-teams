@@ -63,14 +63,14 @@ export class MessageSystem {
 
   private readMessages(channel: ChatChannel, agentId: string): Message[] {
     const cursor = this.getCursor(channel, agentId);
-    const unread = channel.messages.slice(cursor);
+    const unread = channel.messages.slice(cursor).filter((m) => m.from !== agentId);
     channel.readCursors.set(agentId, channel.messages.length);
     return unread;
   }
 
   private peekCount(channel: ChatChannel, agentId: string): number {
     const cursor = this.getCursor(channel, agentId);
-    return channel.messages.length - cursor;
+    return channel.messages.slice(cursor).filter((m) => m.from !== agentId).length;
   }
 
   groupChatPost(teamId: string, agentId: string, agentRole: string, message: string): void {

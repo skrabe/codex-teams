@@ -123,17 +123,16 @@ describe("buildInstructions", () => {
     const instr = state.buildInstructions(agent, team.id);
 
     assert.ok(instr.includes("=== HOW YOU WORK ==="));
-    assert.ok(instr.includes("autonomous"));
+    assert.ok(instr.includes("senior engineer"));
     assert.ok(instr.includes("--- RULES ---"));
-    assert.ok(instr.includes("group_chat_read"));
-    assert.ok(instr.includes("dm_read"));
-    assert.ok(instr.includes("WHEN YOU COMPLETE"));
-    assert.ok(instr.includes("Post progress"));
-    assert.ok(instr.includes("DM them directly"));
+    assert.ok(instr.includes("group_chat"));
+    assert.ok(instr.includes("dm_peek"));
+    assert.ok(instr.includes("PLANNING"));
+    assert.ok(instr.includes("THINKING OUT LOUD"));
     assert.ok(instr.includes("share()"));
     assert.ok(instr.includes("get_shared"));
-    assert.ok(instr.includes("dm_peek"));
-    assert.ok(instr.includes("Never skip peek calls"));
+    assert.ok(instr.includes("Stay responsive"));
+    assert.ok(instr.includes("Share reasoning"));
   });
 
   it("includes LEAD RESPONSIBILITIES for leads", () => {

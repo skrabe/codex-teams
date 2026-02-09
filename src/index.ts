@@ -13,7 +13,7 @@ async function main() {
 
   await codex.connect();
 
-  const { httpServer, port } = startCommsServer(messages, state, codex);
+  const { httpServer, port } = await startCommsServer(messages, state, codex);
   codex.setCommsPort(port);
   codex.setStateManager(state);
 
@@ -35,6 +35,10 @@ async function main() {
 
   process.on("SIGINT", shutdown);
   process.on("SIGTERM", shutdown);
+  process.stdin.on("end", shutdown);
+  process.on("exit", () => {
+    httpServer.close();
+  });
 
   process.on("unhandledRejection", (reason) => {
     console.error("codex-teams: unhandled rejection:", reason);

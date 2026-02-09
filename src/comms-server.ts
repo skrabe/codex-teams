@@ -401,11 +401,11 @@ function registerCommsTools(
   );
 }
 
-export function startCommsServer(
+export async function startCommsServer(
   messages: MessageSystem,
   state: TeamManager,
   codex?: CodexClientManager,
-): { httpServer: Server; port: number } {
+): Promise<{ httpServer: Server; port: number }> {
   const app = createMcpExpressApp();
   const transports = new Map<string, StreamableHTTPServerTransport>();
   const sessionAgents = new Map<string, string>();
@@ -462,6 +462,7 @@ export function startCommsServer(
   });
 
   const httpServer = app.listen(0, "127.0.0.1");
+  await new Promise<void>((resolve) => httpServer.on("listening", resolve));
   const addr = httpServer.address();
   const port = typeof addr === "object" && addr !== null ? addr.port : 0;
 

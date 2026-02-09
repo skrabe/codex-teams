@@ -162,7 +162,7 @@ export class TeamManager {
       baseInstructions: config.baseInstructions ?? "",
       cwd: config.cwd ?? process.cwd(),
       approvalPolicy: config.approvalPolicy ?? "never",
-      reasoningEffort: isLead ? "xhigh" : "high",
+      reasoningEffort: config.reasoningEffort ?? (isLead ? "xhigh" : "high"),
       isLead,
       status: "idle",
       lastOutput: "",

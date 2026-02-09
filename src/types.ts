@@ -12,6 +12,7 @@ export interface AgentConfig {
   baseInstructions?: string;
   cwd?: string;
   approvalPolicy?: ApprovalPolicy;
+  reasoningEffort?: ReasoningEffort;
   isLead?: boolean;
 }
 

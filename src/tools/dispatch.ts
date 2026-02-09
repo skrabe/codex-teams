@@ -3,6 +3,7 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { TeamManager } from "../state.js";
 import type { CodexClientManager } from "../codex-client.js";
 import type { MessageSystem } from "../messages.js";
+import { withTimeout, WORKER_TIMEOUT_MS } from "../tool-utils.js";
 
 export function registerDispatchTools(
   server: McpServer,
@@ -52,7 +53,9 @@ export function registerDispatchTools(
         const tasks = agentConfigs.map((ac) => ac.task);
 
         const results = await Promise.allSettled(
-          agentList.map((agent, i) => codex.sendToAgent(agent, tasks[i])),
+          agentList.map((agent, i) =>
+            withTimeout(codex.sendToAgent(agent, tasks[i]), WORKER_TIMEOUT_MS, `Agent ${agent.id}`),
+          ),
         );
 
         const report = agentList.map((agent, i) => {
