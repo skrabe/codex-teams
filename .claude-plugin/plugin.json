@@ -1,7 +1,7 @@
 {
   "name": "codex-teams",
   "description": "Team-based agent orchestration — create teams of AI agents that work together with structured communication, task dependencies, and verification loops",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "author": {
     "name": "skrabe"
   },
