@@ -109,12 +109,12 @@ describe("buildInstructions", () => {
     assert.ok(!workerInstr.includes("lead_chat_peek"));
   });
 
-  it("includes agent ID for tool calls", () => {
+  it("includes agent ID in identity section", () => {
     const team = state.createTeam("t", [{ role: "dev" }]);
     const agent = Array.from(team.agents.values())[0];
     const instr = state.buildInstructions(agent, team.id);
 
-    assert.ok(instr.includes(`Your agent ID for all tool calls: ${agent.id}`));
+    assert.ok(instr.includes(`Agent ID: ${agent.id}`));
   });
 
   it("includes workflow rules", () => {
@@ -128,7 +128,7 @@ describe("buildInstructions", () => {
     assert.ok(instr.includes("group_chat"));
     assert.ok(instr.includes("dm_peek"));
     assert.ok(instr.includes("PLANNING"));
-    assert.ok(instr.includes("WORKING OUT LOUD"));
+    assert.ok(instr.includes("COMMUNICATING"));
     assert.ok(instr.includes("share()"));
     assert.ok(instr.includes("get_shared"));
     assert.ok(instr.includes("STAYING RESPONSIVE"));

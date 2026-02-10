@@ -6,7 +6,7 @@ import type { TeamManager } from "../state.js";
 import type { CodexClientManager } from "../codex-client.js";
 import type { Message, MessageSystem } from "../messages.js";
 import type { Agent, Team } from "../types.js";
-import { withTimeout, WORKER_TIMEOUT_MS } from "../tool-utils.js";
+import { withTimeout, WORKER_TIMEOUT_MS, toolError, toolJson } from "../tool-utils.js";
 
 type MissionPhase = "executing" | "verifying" | "fixing" | "reviewing" | "completed" | "error";
 
@@ -62,33 +62,25 @@ ${workerList}
 
 === WHAT TO DO RIGHT NOW ===
 Your workers are starting up alongside you. They'll be reading group_chat and exploring the codebase.
-Your job is to lead a brief planning discussion, then coordinate execution.
+Your job is to post a complete plan, handle objections, then coordinate execution.
 
-1. OPEN THE PLANNING DISCUSSION
-   Use group_chat_post to share your initial analysis. Don't assign tasks yet — propose a plan and invite input:
-   - Break down what needs to happen and why
-   - Propose how to divide the work (based on worker roles/specializations)
-   - Call out dependencies, risks, and open questions
-   - Ask for input: "What am I missing? Does this breakdown make sense?"
+1. KICK OFF WITH A PLAN
+   Post your complete analysis to group_chat — think design doc, not meeting opener.
+   Front-load your reasoning so workers have enough context to course-correct if they find
+   something you didn't anticipate:
+   - Problem breakdown: what needs to happen and why
+   - Approach: how the work divides, what each worker owns, where pieces connect
+   - Dependencies and risks: what could go wrong, what to watch for
+   - Concrete assignments per worker based on their role/specialization
+   End with: "Raise concerns now, otherwise execute."
 
-   Example:
-   "Here's my read on this mission: we need [A], [B], and [C].
+   A thorough kickoff with clear reasoning prevents rounds of back-and-forth.
 
-   I'm thinking @worker-1 takes [A] since they specialize in [X], and @worker-2 handles [B].
-   [C] depends on both, so we'll tackle it once [A] and [B] are done.
-
-   Concerns:
-   - [risk 1] — @worker-1, can you check this first?
-   - [open question] — @worker-2, any thoughts?
-
-   Let's discuss before we start coding."
-
-2. FACILITATE THE DISCUSSION
-   Read responses. Workers may suggest changes, raise concerns, or share context from their
-   codebase exploration. Incorporate their input. If workers disagree, help them find common ground.
-   When the team reaches consensus, post a clear summary with finalized assignments:
-   "OK, here's what we agreed: [final plan]. @worker-1: [task]. @worker-2: [task]. Let's go."
-   Keep the discussion brief — 2-3 rounds is usually enough. The goal is alignment, not perfection.
+2. HANDLE OBJECTIONS AND GO
+   If workers raise concerns or share context that changes the plan, adapt quickly.
+   Don't wait for explicit agreement from everyone — silence means the plan is fine.
+   One round of feedback is usually enough. Lock assignments and move on.
+   The goal is alignment, not consensus on every detail.
 
 3. DURING EXECUTION
    - Help resolve ambiguity and conflicts quickly.
@@ -141,34 +133,30 @@ ${teammateList || "  (none — you are the only worker)"}
 
 === WHAT TO DO RIGHT NOW ===
 
-1. JOIN THE PLANNING DISCUSSION
-   Call group_chat_read to check for the lead's plan. The lead (@${lead.id}) will post an
-   initial plan. While waiting, start exploring the codebase to build context. When the plan
-   appears, engage with it:
-   - React to the proposed breakdown. Does it make sense? Would you approach it differently?
-   - Speak up about your area: "I've looked at the code and we should watch out for X."
-   - Raise concerns early: "If we do it that way, we'll hit a problem with Y. What about Z?"
-   - Volunteer for work that matches your strengths.
+1. GET THE PLAN
+   Call group_chat_read for the lead's plan. The lead (@${lead.id}) will post assignments.
+   While waiting, start exploring the codebase to build context.
+   When the plan appears: if you see a problem or have context that changes the approach,
+   speak up immediately. If it looks right, start executing — don't post just to agree.
 
    If the lead hasn't posted yet, share what you find from your exploration:
    "I looked at the project structure — here's what I found: [summary]. Relevant for [reason]."
 
-2. ONCE THE TEAM AGREES — EXECUTE WITH CONFIDENCE
+2. EXECUTE WITH CONFIDENCE
    You're a senior engineer. Own your piece. Make decisions within your scope without asking permission.
    But stay aware of how your work connects to others'.
 
-3. NARRATE YOUR WORK AS YOU GO
-   Your teammates can't see your screen. The only way they know what you're doing is group_chat.
-   Post at natural breakpoints — don't go dark and dump a final report:
-   - Starting a new area: "Diving into the auth module — 6 files to review"
-   - Mid-progress: "3 of 6 files checked. Found 2 using deprecated API so far"
-   - Key discovery: "Config parser on line 89 silently swallows errors — this looks like our bug. @teammate, does this affect your area?"
-   - Decision point: "Going with X over Y because [reason]"
-   - Producing an artifact: call share() IMMEDIATELY with context, don't wait until the end
-   - Stuck or unsure: ask your teammate directly, not just the lead
+3. COMMUNICATE AT BOUNDARIES
+   Post to group_chat when something you find affects a teammate or the plan:
+   - Cross-cutting discovery: "@teammate, this affects your area — [specifics and why]"
+   - Decision with implications: "Going with X over Y because [reason] — this means [impact on others]"
+   - Risk the plan missed: "This has a hidden dependency on [thing] — affects [who/what]"
+   - Blocker: ask the specific teammate who can help, not just the lead
+   DM when it affects one person specifically.
 
-   When you read a teammate's message, RESPOND to it. Connect findings, add context, push back.
-   Silent reading is wasted communication.
+   Use share() for structured evidence/artifacts. Reference them briefly in chat — don't duplicate.
+   When a teammate's message relates to your work, respond with substance — connect findings, add
+   context, push back. Don't respond just to acknowledge.
 
 4. HELP YOUR TEAMMATES AND WRAP UP
    - Answer questions if you know the answer — don't wait for the lead.
@@ -176,7 +164,7 @@ ${teammateList || "  (none — you are the only worker)"}
    - share() your final deliverable with what you built, key decisions, and gotchas.
    - Check if your work integrates with teammates' work before declaring done.
 
-Stay responsive: peek for messages after every tool call (dm_peek + group_chat_peek). A teammate
+Stay responsive: peek for messages frequently (after each atomic step of work). A teammate
 may need you right now. Full communication guidelines are in your base instructions.
 
 Your agent ID: ${worker.id}
@@ -207,14 +195,20 @@ ${mission.objective}
 ${resultsSummary}
 ${verificationSection}
 === WHAT TO DO NOW ===
-1. Call group_chat_read to see the full conversation history — worker progress updates, decisions made, issues resolved.
+1. Call group_chat_read to see the full conversation history.
 2. Call get_shared to review all shared artifacts and deliverables.
 3. Write a structured FINAL REPORT with:
    - Mission objective (1 line)
-   - Summary of what was accomplished
-   - Per-worker deliverables
-   - Any issues encountered and how they were resolved
-   - Remaining work or known issues (if any)${verificationOutput !== undefined ? "\n   - Verification results and status" : ""}`;
+   - Key findings and conclusions — synthesize across workers, don't just list per-worker summaries
+   - Important decisions made and their rationale
+   - Actionable recommendations or deliverables
+   - Remaining work or known issues (if any)${verificationOutput !== undefined ? "\n   - Verification results and status" : ""}
+
+   IMPORTANT: Write for the person who commissioned this work — they want outcomes and prioritized
+   recommendations, not a narrative of what each worker did.
+   Reference shared artifacts by name/title rather than repeating their full content inline.
+   The reader has access to the raw artifacts and comms via get_mission_comms — your report should
+   synthesize and prioritize, not rehash everything. Focus on what matters most and why.`;
 }
 
 function buildFixPrompt(
@@ -542,28 +536,15 @@ export function registerMissionTools(
         };
       }
 
-      return {
-        content: [
-          {
-            type: "text" as const,
-            text: JSON.stringify(
-              {
-                missionId: mission.id,
-                phase: mission.phase,
-                teamId: mission.teamId,
-                leadId: mission.leadId,
-                workerIds: mission.workerIds,
-                workerResults: mission.workerResults,
-                verificationLog: mission.verificationLog,
-                finalReport: mission.finalReport || undefined,
-                error: mission.error,
-              },
-              null,
-              2,
-            ),
-          },
-        ],
-      };
+      return toolJson({
+        missionId: mission.id,
+        phase: mission.phase,
+        teamId: mission.teamId,
+        leadId: mission.leadId,
+        workerIds: mission.workerIds,
+        finalReport: mission.finalReport || undefined,
+        error: mission.error,
+      });
     },
   );
 
@@ -571,7 +552,7 @@ export function registerMissionTools(
     "await_mission",
     {
       description:
-        "Block until a mission completes (or errors). Returns the final result including comms log. Use this from a background agent to avoid polling loops.",
+        "Block until a mission completes (or errors). Returns the lead's final report. Use get_mission_comms for raw communication logs.",
       inputSchema: {
         missionId: z.string().describe("Mission ID returned by launch_mission"),
         pollIntervalMs: z.number().optional().describe("Poll interval in ms (default: 3000)"),
@@ -582,50 +563,56 @@ export function registerMissionTools(
       try {
         const mission = await waitForMission(missionId, pollIntervalMs ?? 3000, timeoutMs ?? 3600000);
 
-        const formatMsg = (m: Message) => ({
-          from: `${m.fromRole} (${m.from})`,
-          text: m.text,
-          time: m.timestamp.toISOString(),
+        return toolJson({
+          missionId: mission.id,
+          phase: mission.phase,
+          finalReport: mission.finalReport,
+          error: mission.error,
         });
-        const comms = mission.comms
-          ? {
-              groupChat: mission.comms.groupChat.map(formatMsg),
-              dms: mission.comms.dms.map(formatMsg),
-              leadChat: mission.comms.leadChat.map(formatMsg),
-              sharedArtifacts: mission.comms.sharedArtifacts.map((a) => ({
-                from: a.from,
-                data: a.data,
-                time: a.timestamp.toISOString(),
-              })),
-            }
-          : { groupChat: [], dms: [], leadChat: [], sharedArtifacts: [] };
-
-        missions.delete(missionId);
-
-        return {
-          content: [
-            {
-              type: "text" as const,
-              text: JSON.stringify(
-                {
-                  missionId: mission.id,
-                  phase: mission.phase,
-                  finalReport: mission.finalReport,
-                  error: mission.error,
-                  workerResults: mission.workerResults,
-                  verificationLog: mission.verificationLog,
-                  comms,
-                },
-                null,
-                2,
-              ),
-            },
-          ],
-        };
       } catch (error) {
         const msg = error instanceof Error ? error.message : String(error);
         return { isError: true, content: [{ type: "text" as const, text: msg }] };
       }
+    },
+  );
+
+  server.registerTool(
+    "get_mission_comms",
+    {
+      description:
+        "Get communication logs and raw worker outputs for a completed mission. Available for 30 minutes after mission completion. Use get_team_comms instead for active (in-progress) teams.",
+      inputSchema: {
+        missionId: z.string().describe("Mission ID returned by launch_mission"),
+      },
+    },
+    async ({ missionId }) => {
+      const mission = missions.get(missionId);
+      if (!mission) return toolError(`Mission not found: ${missionId}`);
+      if (!mission.comms)
+        return toolError(
+          `Mission ${missionId} has not completed yet — use get_team_comms with teamId instead`,
+        );
+
+      const formatMsg = (m: Message) => ({
+        from: `${m.fromRole} (${m.from})`,
+        text: m.text,
+        time: m.timestamp.toISOString(),
+      });
+
+      return toolJson({
+        missionId: mission.id,
+        phase: mission.phase,
+        groupChat: mission.comms.groupChat.map(formatMsg),
+        dms: mission.comms.dms.map(formatMsg),
+        leadChat: mission.comms.leadChat.map(formatMsg),
+        sharedArtifacts: mission.comms.sharedArtifacts.map((a) => ({
+          from: a.from,
+          data: a.data,
+          time: a.timestamp.toISOString(),
+        })),
+        workerResults: mission.workerResults,
+        verificationLog: mission.verificationLog,
+      });
     },
   );
 

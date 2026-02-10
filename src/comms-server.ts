@@ -33,10 +33,11 @@ function registerCommsTools(
   state: TeamManager,
   boundAgentId?: string,
 ) {
-  function enforceIdentity(claimedId: string): string | null {
-    if (boundAgentId && claimedId !== boundAgentId)
-      return `Agent ID mismatch: session bound to ${boundAgentId}, got ${claimedId}`;
-    return null;
+  const err = (msg: string) => ({ isError: true as const, content: [{ type: "text" as const, text: msg }] });
+
+  function resolve() {
+    if (!boundAgentId) return null;
+    return findAgentContext(state, boundAgentId);
   }
 
   server.registerTool(
@@ -44,18 +45,14 @@ function registerCommsTools(
     {
       description: "Post a message to your team's group chat",
       inputSchema: {
-        myAgentId: z.string().describe("Your agent ID"),
         message: z.string().max(50000).describe("Message to post"),
       },
     },
-    async ({ myAgentId, message }) => {
-      const err = enforceIdentity(myAgentId);
-      if (err) return { isError: true, content: [{ type: "text" as const, text: err }] };
-      const ctx = findAgentContext(state, myAgentId);
-      if (!ctx)
-        return { isError: true, content: [{ type: "text" as const, text: `Unknown agent: ${myAgentId}` }] };
+    async ({ message }) => {
+      const ctx = resolve();
+      if (!ctx) return err(`Unknown agent: ${boundAgentId}`);
 
-      messages.groupChatPost(ctx.team.id, myAgentId, ctx.agent.role, message);
+      messages.groupChatPost(ctx.team.id, boundAgentId!, ctx.agent.role, message);
       return { content: [{ type: "text" as const, text: "Posted to group chat" }] };
     },
   );
@@ -64,18 +61,13 @@ function registerCommsTools(
     "group_chat_read",
     {
       description: "Read unread group chat messages",
-      inputSchema: {
-        myAgentId: z.string().describe("Your agent ID"),
-      },
+      inputSchema: {},
     },
-    async ({ myAgentId }) => {
-      const err = enforceIdentity(myAgentId);
-      if (err) return { isError: true, content: [{ type: "text" as const, text: err }] };
-      const ctx = findAgentContext(state, myAgentId);
-      if (!ctx)
-        return { isError: true, content: [{ type: "text" as const, text: `Unknown agent: ${myAgentId}` }] };
+    async () => {
+      const ctx = resolve();
+      if (!ctx) return err(`Unknown agent: ${boundAgentId}`);
 
-      const msgs = messages.groupChatRead(ctx.team.id, myAgentId);
+      const msgs = messages.groupChatRead(ctx.team.id, boundAgentId!);
       return {
         content: [
           {
@@ -98,18 +90,13 @@ function registerCommsTools(
     "group_chat_peek",
     {
       description: "Check how many unread group chat messages you have",
-      inputSchema: {
-        myAgentId: z.string().describe("Your agent ID"),
-      },
+      inputSchema: {},
     },
-    async ({ myAgentId }) => {
-      const err = enforceIdentity(myAgentId);
-      if (err) return { isError: true, content: [{ type: "text" as const, text: err }] };
-      const ctx = findAgentContext(state, myAgentId);
-      if (!ctx)
-        return { isError: true, content: [{ type: "text" as const, text: `Unknown agent: ${myAgentId}` }] };
+    async () => {
+      const ctx = resolve();
+      if (!ctx) return err(`Unknown agent: ${boundAgentId}`);
 
-      const count = messages.groupChatPeek(ctx.team.id, myAgentId);
+      const count = messages.groupChatPeek(ctx.team.id, boundAgentId!);
       return { content: [{ type: "text" as const, text: JSON.stringify({ unread: count }) }] };
     },
   );
@@ -119,37 +106,24 @@ function registerCommsTools(
     {
       description: "Send a direct message to another agent",
       inputSchema: {
-        myAgentId: z.string().describe("Your agent ID"),
         toAgentId: z.string().describe("Target agent ID"),
         message: z.string().max(50000).describe("Message to send"),
       },
     },
-    async ({ myAgentId, toAgentId, message }) => {
-      const err = enforceIdentity(myAgentId);
-      if (err) return { isError: true, content: [{ type: "text" as const, text: err }] };
-      const ctx = findAgentContext(state, myAgentId);
-      if (!ctx)
-        return { isError: true, content: [{ type: "text" as const, text: `Unknown agent: ${myAgentId}` }] };
+    async ({ toAgentId, message }) => {
+      const ctx = resolve();
+      if (!ctx) return err(`Unknown agent: ${boundAgentId}`);
 
       const toCtx = findAgentContext(state, toAgentId);
-      if (!toCtx)
-        return {
-          isError: true,
-          content: [{ type: "text" as const, text: `Unknown target agent: ${toAgentId}` }],
-        };
+      if (!toCtx) return err(`Unknown target agent: ${toAgentId}`);
 
       const sameTeam = ctx.team.id === toCtx.team.id;
       const bothLeads = ctx.agent.isLead && toCtx.agent.isLead;
       if (!sameTeam && !bothLeads) {
-        return {
-          isError: true,
-          content: [
-            { type: "text" as const, text: `Cannot DM agent outside your team unless both are leads` },
-          ],
-        };
+        return err(`Cannot DM agent outside your team unless both are leads`);
       }
 
-      messages.dmSend(myAgentId, toAgentId, ctx.agent.role, message);
+      messages.dmSend(boundAgentId!, toAgentId, ctx.agent.role, message);
       return { content: [{ type: "text" as const, text: `DM sent to ${toAgentId}` }] };
     },
   );
@@ -159,18 +133,14 @@ function registerCommsTools(
     {
       description: "Read your unread direct messages",
       inputSchema: {
-        myAgentId: z.string().describe("Your agent ID"),
         fromAgentId: z.string().optional().describe("Filter by sender agent ID"),
       },
     },
-    async ({ myAgentId, fromAgentId }) => {
-      const err = enforceIdentity(myAgentId);
-      if (err) return { isError: true, content: [{ type: "text" as const, text: err }] };
-      const ctx = findAgentContext(state, myAgentId);
-      if (!ctx)
-        return { isError: true, content: [{ type: "text" as const, text: `Unknown agent: ${myAgentId}` }] };
+    async ({ fromAgentId }) => {
+      const ctx = resolve();
+      if (!ctx) return err(`Unknown agent: ${boundAgentId}`);
 
-      const msgs = messages.dmRead(myAgentId, fromAgentId);
+      const msgs = messages.dmRead(boundAgentId!, fromAgentId);
       return {
         content: [
           {
@@ -193,18 +163,13 @@ function registerCommsTools(
     "dm_peek",
     {
       description: "Check unread DM count",
-      inputSchema: {
-        myAgentId: z.string().describe("Your agent ID"),
-      },
+      inputSchema: {},
     },
-    async ({ myAgentId }) => {
-      const err = enforceIdentity(myAgentId);
-      if (err) return { isError: true, content: [{ type: "text" as const, text: err }] };
-      const ctx = findAgentContext(state, myAgentId);
-      if (!ctx)
-        return { isError: true, content: [{ type: "text" as const, text: `Unknown agent: ${myAgentId}` }] };
+    async () => {
+      const ctx = resolve();
+      if (!ctx) return err(`Unknown agent: ${boundAgentId}`);
 
-      const count = messages.dmPeek(myAgentId);
+      const count = messages.dmPeek(boundAgentId!);
       return { content: [{ type: "text" as const, text: JSON.stringify({ unread: count }) }] };
     },
   );
@@ -214,18 +179,14 @@ function registerCommsTools(
     {
       description: "Share info/file paths with the team",
       inputSchema: {
-        myAgentId: z.string().describe("Your agent ID"),
         data: z.string().max(100000).describe("Data to share (file paths, context, etc)"),
       },
     },
-    async ({ myAgentId, data }) => {
-      const err = enforceIdentity(myAgentId);
-      if (err) return { isError: true, content: [{ type: "text" as const, text: err }] };
-      const ctx = findAgentContext(state, myAgentId);
-      if (!ctx)
-        return { isError: true, content: [{ type: "text" as const, text: `Unknown agent: ${myAgentId}` }] };
+    async ({ data }) => {
+      const ctx = resolve();
+      if (!ctx) return err(`Unknown agent: ${boundAgentId}`);
 
-      messages.shareArtifact(ctx.team.id, myAgentId, data);
+      messages.shareArtifact(ctx.team.id, boundAgentId!, data);
       return { content: [{ type: "text" as const, text: "Shared with team" }] };
     },
   );
@@ -234,16 +195,11 @@ function registerCommsTools(
     "get_shared",
     {
       description: "See everything the team has shared",
-      inputSchema: {
-        myAgentId: z.string().describe("Your agent ID"),
-      },
+      inputSchema: {},
     },
-    async ({ myAgentId }) => {
-      const err = enforceIdentity(myAgentId);
-      if (err) return { isError: true, content: [{ type: "text" as const, text: err }] };
-      const ctx = findAgentContext(state, myAgentId);
-      if (!ctx)
-        return { isError: true, content: [{ type: "text" as const, text: `Unknown agent: ${myAgentId}` }] };
+    async () => {
+      const ctx = resolve();
+      if (!ctx) return err(`Unknown agent: ${boundAgentId}`);
 
       const artifacts = messages.getSharedArtifacts(ctx.team.id);
       return {
@@ -264,20 +220,15 @@ function registerCommsTools(
     {
       description: "Post to the cross-team lead channel (leads only)",
       inputSchema: {
-        myAgentId: z.string().describe("Your agent ID"),
         message: z.string().max(50000).describe("Message to post"),
       },
     },
-    async ({ myAgentId, message }) => {
-      const err = enforceIdentity(myAgentId);
-      if (err) return { isError: true, content: [{ type: "text" as const, text: err }] };
-      const ctx = findAgentContext(state, myAgentId);
-      if (!ctx)
-        return { isError: true, content: [{ type: "text" as const, text: `Unknown agent: ${myAgentId}` }] };
-      if (!ctx.agent.isLead)
-        return { isError: true, content: [{ type: "text" as const, text: `Only leads can use lead_chat` }] };
+    async ({ message }) => {
+      const ctx = resolve();
+      if (!ctx) return err(`Unknown agent: ${boundAgentId}`);
+      if (!ctx.agent.isLead) return err(`Only leads can use lead_chat`);
 
-      messages.leadChatPost(myAgentId, ctx.agent.role, ctx.team.name, message);
+      messages.leadChatPost(boundAgentId!, ctx.agent.role, ctx.team.name, message);
       return { content: [{ type: "text" as const, text: "Posted to lead chat" }] };
     },
   );
@@ -286,20 +237,14 @@ function registerCommsTools(
     "lead_chat_read",
     {
       description: "Read unread cross-team lead messages (leads only)",
-      inputSchema: {
-        myAgentId: z.string().describe("Your agent ID"),
-      },
+      inputSchema: {},
     },
-    async ({ myAgentId }) => {
-      const err = enforceIdentity(myAgentId);
-      if (err) return { isError: true, content: [{ type: "text" as const, text: err }] };
-      const ctx = findAgentContext(state, myAgentId);
-      if (!ctx)
-        return { isError: true, content: [{ type: "text" as const, text: `Unknown agent: ${myAgentId}` }] };
-      if (!ctx.agent.isLead)
-        return { isError: true, content: [{ type: "text" as const, text: `Only leads can use lead_chat` }] };
+    async () => {
+      const ctx = resolve();
+      if (!ctx) return err(`Unknown agent: ${boundAgentId}`);
+      if (!ctx.agent.isLead) return err(`Only leads can use lead_chat`);
 
-      const msgs = messages.leadChatRead(myAgentId);
+      const msgs = messages.leadChatRead(boundAgentId!);
       return {
         content: [
           {
@@ -322,20 +267,14 @@ function registerCommsTools(
     "lead_chat_peek",
     {
       description: "Check unread cross-team lead message count (leads only)",
-      inputSchema: {
-        myAgentId: z.string().describe("Your agent ID"),
-      },
+      inputSchema: {},
     },
-    async ({ myAgentId }) => {
-      const err = enforceIdentity(myAgentId);
-      if (err) return { isError: true, content: [{ type: "text" as const, text: err }] };
-      const ctx = findAgentContext(state, myAgentId);
-      if (!ctx)
-        return { isError: true, content: [{ type: "text" as const, text: `Unknown agent: ${myAgentId}` }] };
-      if (!ctx.agent.isLead)
-        return { isError: true, content: [{ type: "text" as const, text: `Only leads can use lead_chat` }] };
+    async () => {
+      const ctx = resolve();
+      if (!ctx) return err(`Unknown agent: ${boundAgentId}`);
+      if (!ctx.agent.isLead) return err(`Only leads can use lead_chat`);
 
-      const count = messages.leadChatPeek(myAgentId);
+      const count = messages.leadChatPeek(boundAgentId!);
       return { content: [{ type: "text" as const, text: JSON.stringify({ unread: count }) }] };
     },
   );
@@ -345,16 +284,11 @@ function registerCommsTools(
     {
       description:
         "Get your team's full context: all teammates, their roles, specializations, current status, and assigned tasks. Call this BEFORE searching independently for non-trivial information — a teammate may already be working in that scope.",
-      inputSchema: {
-        myAgentId: z.string().describe("Your agent ID"),
-      },
+      inputSchema: {},
     },
-    async ({ myAgentId }) => {
-      const err = enforceIdentity(myAgentId);
-      if (err) return { isError: true, content: [{ type: "text" as const, text: err }] };
-      const ctx = findAgentContext(state, myAgentId);
-      if (!ctx)
-        return { isError: true, content: [{ type: "text" as const, text: `Unknown agent: ${myAgentId}` }] };
+    async () => {
+      const ctx = resolve();
+      if (!ctx) return err(`Unknown agent: ${boundAgentId}`);
 
       function mapAgents(team: ReturnType<typeof state.getTeam>, excludeId?: string) {
         return Array.from(team!.agents.values())
@@ -388,8 +322,8 @@ function registerCommsTools(
         yourTeam: {
           teamId: ctx.team.id,
           teamName: ctx.team.name,
-          you: { id: myAgentId, role: ctx.agent.role, isLead: ctx.agent.isLead },
-          teammates: mapAgents(ctx.team, myAgentId),
+          you: { id: boundAgentId, role: ctx.agent.role, isLead: ctx.agent.isLead },
+          teammates: mapAgents(ctx.team, boundAgentId),
         },
         otherTeams: otherTeams.length > 0 ? otherTeams : undefined,
         howToReach:

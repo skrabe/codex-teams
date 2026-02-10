@@ -120,7 +120,7 @@ describe("launch_mission + mission_status (async model)", () => {
     assert.ok(leadCall.message.includes("TEAM LEAD"), "Should contain TEAM LEAD");
     assert.ok(leadCall.message.includes("MISSION OBJECTIVE"), "Should contain MISSION OBJECTIVE");
     assert.ok(leadCall.message.includes("Implement OAuth flow"), "Should contain the objective");
-    assert.ok(leadCall.message.includes("group_chat_post"), "Should mention group_chat_post");
+    assert.ok(leadCall.message.includes("group_chat"), "Should mention group_chat");
   });
 
   it("worker prompt contains assignment instructions and team info", async () => {
@@ -170,15 +170,13 @@ describe("launch_mission + mission_status (async model)", () => {
     const statusResult = await callTool(server, "mission_status", { missionId });
     const status = JSON.parse(statusResult.content[0].text);
     assert.equal(status.phase, "completed");
-    assert.ok(status.workerResults.length >= 1);
+    assert.ok(status.finalReport);
   });
 
   it("handles worker errors gracefully", async () => {
-    let badWorkerId = "";
     const origSend = codex.sendToAgent.bind(codex);
     codex.sendToAgent = async (agent: Agent, message: string) => {
       if (agent.role === "bad-worker") {
-        badWorkerId = agent.id;
         codex.calls.push({ agentId: agent.id, message });
         agent.status = "error";
         throw new Error("Worker crashed");
@@ -204,10 +202,6 @@ describe("launch_mission + mission_status (async model)", () => {
     const statusResult = await callTool(server, "mission_status", { missionId });
     const status = JSON.parse(statusResult.content[0].text);
     assert.equal(status.phase, "completed");
-
-    const badResult = status.workerResults.find((r: { agentId: string }) => r.agentId === badWorkerId);
-    assert.ok(badResult, "Should have result for bad worker");
-    assert.equal(badResult.status, "error");
   });
 
   it("handles lead error gracefully", async () => {
@@ -283,8 +277,6 @@ describe("launch_mission + mission_status (async model)", () => {
     const statusResult = await callTool(server, "mission_status", { missionId });
     const status = JSON.parse(statusResult.content[0].text);
     assert.equal(status.phase, "completed");
-    assert.ok(status.verificationLog.length >= 1);
-    assert.equal(status.verificationLog[0].passed, true);
 
     const compilationCall = codex.calls.find(
       (c) => c.agentId === leadId && c.message.includes("VERIFICATION RESULTS"),
@@ -331,7 +323,6 @@ describe("launch_mission + mission_status (async model)", () => {
     const statusResult = await callTool(server, "mission_status", { missionId });
     const status = JSON.parse(statusResult.content[0].text);
     assert.equal(status.phase, "completed");
-    assert.ok(status.verificationLog.length >= 1);
   });
 
   it("stops retrying after maxVerifyRetries", async () => {
@@ -371,10 +362,6 @@ describe("launch_mission + mission_status (async model)", () => {
     const statusResult = await callTool(server, "mission_status", { missionId });
     const status = JSON.parse(statusResult.content[0].text);
     assert.equal(status.phase, "completed");
-    assert.ok(status.verificationLog.length <= 3);
-
-    const lastVerification = status.verificationLog[status.verificationLog.length - 1];
-    assert.equal(lastVerification.passed, false);
 
     const compilationCall = codex.calls.find((c) => c.agentId === leadId && c.message.includes("FAILED"));
     assert.ok(compilationCall, "Compilation should mention failure");

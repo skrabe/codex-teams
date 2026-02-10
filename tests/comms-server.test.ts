@@ -113,15 +113,18 @@ describe("comms server HTTP", () => {
     const result = await startCommsServer(messages, state);
     httpServer = result.httpServer;
 
-    const initRes = await fetch(`http://127.0.0.1:${result.port}/mcp`, {
-      method: "POST",
-      headers: MCP_HEADERS,
-      body: JSON.stringify(initRequest()),
-    });
+    const agent = Array.from(state.listTeams()[0].agents.values())[0];
+
+    const initRes = await fetch(
+      `http://127.0.0.1:${result.port}/mcp?agent=${encodeURIComponent(agent.id)}`,
+      {
+        method: "POST",
+        headers: MCP_HEADERS,
+        body: JSON.stringify(initRequest()),
+      },
+    );
 
     const sessionId = initRes.headers.get("mcp-session-id")!;
-
-    const agent = Array.from(state.listTeams()[0].agents.values())[0];
 
     const toolCall = {
       jsonrpc: "2.0",
@@ -129,7 +132,7 @@ describe("comms server HTTP", () => {
       method: "tools/call",
       params: {
         name: "group_chat_peek",
-        arguments: { myAgentId: agent.id },
+        arguments: {},
       },
     };
 
