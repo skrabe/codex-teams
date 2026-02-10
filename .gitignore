@@ -3,4 +3,4 @@ build/
 test-output/
 .DS_Store
 *.tgz
-PLAN.md
+CLAUDE.md
