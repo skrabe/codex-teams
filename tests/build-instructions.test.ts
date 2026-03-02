@@ -2,6 +2,18 @@ import { describe, it, beforeEach } from "node:test";
 import assert from "node:assert/strict";
 import { TeamManager } from "../src/state.js";
 
+function has(text: string, ...needles: string[]) {
+  for (const n of needles) {
+    assert.ok(text.includes(n), `Missing: "${n}"`);
+  }
+}
+
+function lacks(text: string, ...needles: string[]) {
+  for (const n of needles) {
+    assert.ok(!text.includes(n), `Should not contain: "${n}"`);
+  }
+}
+
 describe("buildInstructions", () => {
   let state: TeamManager;
 
@@ -14,11 +26,7 @@ describe("buildInstructions", () => {
     const agent = Array.from(team.agents.values())[0];
     const instr = state.buildInstructions(agent, team.id);
 
-    assert.ok(instr.includes("=== IDENTITY ==="));
-    assert.ok(instr.includes(`Agent ID: ${agent.id}`));
-    assert.ok(instr.includes("Role: developer"));
-    assert.ok(instr.includes("Specialization: React components"));
-    assert.ok(instr.includes("Team Member"));
+    has(instr, "=== IDENTITY ===", `Agent ID: ${agent.id}`, "Role: developer", "Specialization: React components", "Team Member");
   });
 
   it("marks leads as TEAM LEAD", () => {
@@ -28,8 +36,8 @@ describe("buildInstructions", () => {
     const lead = Array.from(team.agents.values())[0];
     const instr = state.buildInstructions(lead, team.id);
 
-    assert.ok(instr.includes("TEAM LEAD"));
-    assert.ok(!instr.includes("Status: Team Member"));
+    has(instr, "TEAM LEAD");
+    lacks(instr, "Status: Team Member");
   });
 
   it("lists all teammates", () => {
@@ -42,14 +50,10 @@ describe("buildInstructions", () => {
     const devA = agents.find((a) => a.role === "dev-a")!;
     const instr = state.buildInstructions(devA, team.id);
 
-    assert.ok(instr.includes(`=== YOUR TEAM: "full-team" ===`));
+    has(instr, `=== YOUR TEAM: "full-team" ===`, "(you)", "[LEAD]");
     for (const a of agents) {
-      assert.ok(instr.includes(a.id), `Should include agent ${a.id}`);
-      assert.ok(instr.includes(a.role), `Should include role ${a.role}`);
+      has(instr, a.id, a.role);
     }
-
-    assert.ok(instr.includes("(you)"));
-    assert.ok(instr.includes("[LEAD]"));
   });
 
   it("includes other teams section for leads", () => {
@@ -57,12 +61,10 @@ describe("buildInstructions", () => {
     const team2 = state.createTeam("backend", [{ role: "be-lead", isLead: true }]);
 
     const feLead = Array.from(team1.agents.values())[0];
+    const beLead = Array.from(team2.agents.values())[0];
     const instr = state.buildInstructions(feLead, team1.id);
 
-    assert.ok(instr.includes("=== OTHER TEAMS ==="));
-    assert.ok(instr.includes('"backend"'));
-    const beLead = Array.from(team2.agents.values())[0];
-    assert.ok(instr.includes(beLead.id));
+    has(instr, "=== OTHER TEAMS ===", '"backend"', beLead.id);
   });
 
   it("does NOT include other teams section for workers", () => {
@@ -73,23 +75,20 @@ describe("buildInstructions", () => {
     const worker = Array.from(team1.agents.values()).find((a) => !a.isLead)!;
     const instr = state.buildInstructions(worker, team1.id);
 
-    assert.ok(!instr.includes("=== OTHER TEAMS ==="));
+    lacks(instr, "=== OTHER TEAMS ===");
   });
 
-  it("includes communication tools documentation", () => {
+  it("includes comms tools documentation", () => {
     const team = state.createTeam("t", [{ role: "dev" }]);
     const agent = Array.from(team.agents.values())[0];
     const instr = state.buildInstructions(agent, team.id);
 
-    assert.ok(instr.includes("=== COMMUNICATION ==="));
-    assert.ok(instr.includes("group_chat_post"));
-    assert.ok(instr.includes("group_chat_read"));
-    assert.ok(instr.includes("group_chat_peek"));
-    assert.ok(instr.includes("dm_send"));
-    assert.ok(instr.includes("dm_read"));
-    assert.ok(instr.includes("dm_peek"));
-    assert.ok(instr.includes("share("));
-    assert.ok(instr.includes("get_shared("));
+    has(instr,
+      "=== COMMS TOOLS ===",
+      "group_chat_post", "group_chat_read", "group_chat_peek",
+      "dm_send", "dm_read", "dm_peek",
+      "share(", "get_shared(", "wait_for_messages",
+    );
   });
 
   it("includes lead chat tools only for leads", () => {
@@ -98,60 +97,41 @@ describe("buildInstructions", () => {
     const lead = agents.find((a) => a.isLead)!;
     const worker = agents.find((a) => !a.isLead)!;
 
-    const leadInstr = state.buildInstructions(lead, team.id);
-    assert.ok(leadInstr.includes("lead_chat_post"));
-    assert.ok(leadInstr.includes("lead_chat_read"));
-    assert.ok(leadInstr.includes("lead_chat_peek"));
-
-    const workerInstr = state.buildInstructions(worker, team.id);
-    assert.ok(!workerInstr.includes("lead_chat_post"));
-    assert.ok(!workerInstr.includes("lead_chat_read"));
-    assert.ok(!workerInstr.includes("lead_chat_peek"));
+    has(state.buildInstructions(lead, team.id), "lead_chat_post", "lead_chat_read", "lead_chat_peek");
+    lacks(state.buildInstructions(worker, team.id), "lead_chat_post", "lead_chat_read", "lead_chat_peek");
   });
 
   it("includes agent ID in identity section", () => {
     const team = state.createTeam("t", [{ role: "dev" }]);
     const agent = Array.from(team.agents.values())[0];
-    const instr = state.buildInstructions(agent, team.id);
 
-    assert.ok(instr.includes(`Agent ID: ${agent.id}`));
+    has(state.buildInstructions(agent, team.id), `Agent ID: ${agent.id}`);
   });
 
-  it("includes workflow rules", () => {
+  it("includes execution, communication, and anti-patterns sections", () => {
     const team = state.createTeam("t", [{ role: "dev" }]);
     const agent = Array.from(team.agents.values())[0];
     const instr = state.buildInstructions(agent, team.id);
 
-    assert.ok(instr.includes("=== HOW YOU WORK ==="));
-    assert.ok(instr.includes("senior engineer"));
-    assert.ok(instr.includes("--- RULES ---"));
-    assert.ok(instr.includes("group_chat"));
-    assert.ok(instr.includes("dm_peek"));
-    assert.ok(instr.includes("PLANNING"));
-    assert.ok(instr.includes("COMMUNICATING"));
-    assert.ok(instr.includes("share()"));
-    assert.ok(instr.includes("get_shared"));
-    assert.ok(instr.includes("ANTI-PATTERNS"));
+    has(instr,
+      "=== HOW YOU WORK ===",
+      "--- EXECUTION ---", "--- COMMUNICATION ---", "ANTI-PATTERNS",
+      "group_chat", "share()", "get_shared", "wait_for_messages",
+    );
   });
 
   it("includes LEAD RESPONSIBILITIES for leads", () => {
     const team = state.createTeam("t", [{ role: "lead", isLead: true }, { role: "dev" }]);
     const lead = Array.from(team.agents.values()).find((a) => a.isLead)!;
-    const instr = state.buildInstructions(lead, team.id);
 
-    assert.ok(instr.includes("LEAD RESPONSIBILITIES"));
-    assert.ok(instr.includes("lead_chat_post"));
-    assert.ok(instr.includes("lead_chat_read"));
-    assert.ok(instr.includes("lead_chat_peek"));
+    has(state.buildInstructions(lead, team.id), "LEAD RESPONSIBILITIES", "lead_chat_post", "lead_chat_read", "lead_chat_peek");
   });
 
   it("does NOT include LEAD RESPONSIBILITIES for workers", () => {
     const team = state.createTeam("t", [{ role: "lead", isLead: true }, { role: "dev" }]);
     const worker = Array.from(team.agents.values()).find((a) => !a.isLead)!;
-    const instr = state.buildInstructions(worker, team.id);
 
-    assert.ok(!instr.includes("LEAD RESPONSIBILITIES"));
-    assert.ok(!instr.includes("lead_chat_post"));
+    lacks(state.buildInstructions(worker, team.id), "LEAD RESPONSIBILITIES", "lead_chat_post");
   });
 
   it("includes custom baseInstructions in additional section", () => {
@@ -159,26 +139,22 @@ describe("buildInstructions", () => {
       { role: "dev", baseInstructions: "Focus on TypeScript. Use strict mode." },
     ]);
     const agent = Array.from(team.agents.values())[0];
-    const instr = state.buildInstructions(agent, team.id);
 
-    assert.ok(instr.includes("=== ADDITIONAL INSTRUCTIONS ==="));
-    assert.ok(instr.includes("Focus on TypeScript. Use strict mode."));
+    has(state.buildInstructions(agent, team.id), "=== ADDITIONAL INSTRUCTIONS ===", "Focus on TypeScript. Use strict mode.");
   });
 
   it("does NOT include additional section when no custom instructions", () => {
     const team = state.createTeam("t", [{ role: "dev" }]);
     const agent = Array.from(team.agents.values())[0];
-    const instr = state.buildInstructions(agent, team.id);
 
-    assert.ok(!instr.includes("=== ADDITIONAL INSTRUCTIONS ==="));
+    lacks(state.buildInstructions(agent, team.id), "=== ADDITIONAL INSTRUCTIONS ===");
   });
 
   it("returns basic instructions for unknown teamId", () => {
     const team = state.createTeam("t", [{ role: "dev", baseInstructions: "fallback" }]);
     const agent = Array.from(team.agents.values())[0];
-    const instr = state.buildInstructions(agent, "nonexistent-team-id");
 
-    assert.equal(instr, "fallback");
+    assert.equal(state.buildInstructions(agent, "nonexistent-team-id"), "fallback");
   });
 
   it("shows specialization for teammates", () => {
@@ -187,13 +163,9 @@ describe("buildInstructions", () => {
       { role: "dev-a", specialization: "React" },
       { role: "dev-b", specialization: "PostgreSQL" },
     ]);
-    const agents = Array.from(team.agents.values());
-    const devA = agents.find((a) => a.role === "dev-a")!;
-    const instr = state.buildInstructions(devA, team.id);
+    const devA = Array.from(team.agents.values()).find((a) => a.role === "dev-a")!;
 
-    assert.ok(instr.includes("Architecture"));
-    assert.ok(instr.includes("React"));
-    assert.ok(instr.includes("PostgreSQL"));
+    has(state.buildInstructions(devA, team.id), "Architecture", "React", "PostgreSQL");
   });
 
   it("handles team with no lead", () => {
@@ -201,22 +173,19 @@ describe("buildInstructions", () => {
     const agent = Array.from(team.agents.values())[0];
     const instr = state.buildInstructions(agent, team.id);
 
-    assert.ok(instr.includes("Team Member"));
-    assert.ok(!instr.includes("[LEAD]"));
+    has(instr, "Team Member");
+    lacks(instr, "[LEAD]");
   });
 
-  it("includes work methodology section", () => {
+  it("includes code quality and constraints sections", () => {
     const team = state.createTeam("t", [{ role: "dev" }]);
     const agent = Array.from(team.agents.values())[0];
     const instr = state.buildInstructions(agent, team.id);
 
-    assert.ok(instr.includes("=== WORK METHODOLOGY ==="));
-    assert.ok(instr.includes("Never assume code exists"));
-    assert.ok(instr.includes("Read before proposing edits"));
-    assert.ok(instr.includes("Context7 MCP"));
-    assert.ok(instr.includes("web search"));
-    assert.ok(instr.includes("self-documenting"));
-    assert.ok(instr.includes("run the checks and tests"));
+    has(instr,
+      "--- CODE QUALITY ---", "reading files first", "Read before proposing edits",
+      "Context7 MCP", "web search", "self-documenting", "--- CONSTRAINTS ---",
+    );
   });
 
   it("generates different instructions for different agents on same team", () => {
@@ -229,9 +198,8 @@ describe("buildInstructions", () => {
     const devInstr = state.buildInstructions(dev, team.id);
 
     assert.notEqual(leadInstr, devInstr);
-    assert.ok(leadInstr.includes("TEAM LEAD"));
-    assert.ok(devInstr.includes("Team Member"));
-    assert.ok(leadInstr.includes("lead_chat_post"));
-    assert.ok(!devInstr.includes("lead_chat_post"));
+    has(leadInstr, "TEAM LEAD", "lead_chat_post");
+    has(devInstr, "Team Member");
+    lacks(devInstr, "lead_chat_post");
   });
 });
