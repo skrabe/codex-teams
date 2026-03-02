@@ -130,7 +130,8 @@ ${teammateList || "  (none — you are the only worker)"}
 
 1. GET THE PLAN
    Call group_chat_read for the lead's plan. The lead (@${lead.id}) will post assignments.
-   While waiting, start exploring the codebase to build context.
+   While waiting, start exploring the codebase to build context. Use wait_for_messages()
+   to efficiently wait for the plan instead of polling peek().
    When the plan appears: if you see a problem or have context that changes the approach,
    speak up with specifics. If it looks right, execute — do not post just to agree.
 
@@ -159,8 +160,8 @@ ${teammateList || "  (none — you are the only worker)"}
    - share() your final deliverable with outcomes, key decisions, and gotchas.
    - Check if your work integrates with teammates' work before declaring done.
 
-Stay responsive: peek for messages frequently (after each atomic step of work). A teammate
-may need you right now. Full communication guidelines are in your base instructions.
+Stay responsive: use wait_for_messages() when idle, and peek after each atomic step of work.
+A teammate may need you right now. Full communication guidelines are in your base instructions.
 
 Your agent ID: ${worker.id}
 Team ID: ${team.id}`;

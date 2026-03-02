@@ -27,7 +27,7 @@ function findAgentContext(state: TeamManager, agentId: string) {
   return null;
 }
 
-function registerCommsTools(
+export function registerCommsTools(
   server: McpServer,
   messages: MessageSystem,
   state: TeamManager,
@@ -331,6 +331,100 @@ function registerCommsTools(
       };
 
       return { content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }] };
+    },
+  );
+
+  server.registerTool(
+    "wait_for_messages",
+    {
+      description:
+        "Block until new messages arrive or timeout. Use instead of polling peek(). Returns unread counts.",
+      inputSchema: {
+        timeoutMs: z
+          .number()
+          .int()
+          .min(1000)
+          .max(60000)
+          .optional()
+          .describe("Max wait time in ms (default 30000, max 60000)"),
+      },
+    },
+    async ({ timeoutMs }) => {
+      const ctx = resolve();
+      if (!ctx) return err(`Unknown agent: ${boundAgentId}`);
+
+      const timeout = timeoutMs ?? 30000;
+      const teamId = ctx.team.id;
+      const agentId = boundAgentId!;
+      const isLead = ctx.agent.isLead;
+
+      function getCounts() {
+        return {
+          groupChat: messages.groupChatPeek(teamId, agentId),
+          dms: messages.dmPeek(agentId),
+          leadChat: isLead ? messages.leadChatPeek(agentId) : 0,
+        };
+      }
+
+      const initial = getCounts();
+      if (initial.groupChat > 0 || initial.dms > 0 || initial.leadChat > 0) {
+        return {
+          content: [{ type: "text" as const, text: JSON.stringify({ timedOut: false, ...initial }) }],
+        };
+      }
+
+      return new Promise<{ content: Array<{ type: "text"; text: string }> }>((resolve) => {
+        let settled = false;
+        let timer: ReturnType<typeof setTimeout>;
+
+        const cleanup = messages.onMessage((target) => {
+          if (settled) return;
+
+          const relevant =
+            target.type === "dissolve"
+              ? target.id === agentId
+              : target.type === "team"
+                ? target.id === teamId
+                : target.type === "dm"
+                  ? target.id === agentId
+                  : target.type === "lead"
+                    ? isLead
+                    : false;
+
+          if (!relevant) return;
+
+          if (target.type === "dissolve") {
+            settled = true;
+            clearTimeout(timer);
+            cleanup();
+            resolve({
+              content: [
+                {
+                  type: "text" as const,
+                  text: JSON.stringify({ timedOut: false, dissolved: true, groupChat: 0, dms: 0, leadChat: 0 }),
+                },
+              ],
+            });
+            return;
+          }
+
+          const counts = getCounts();
+          if (counts.groupChat > 0 || counts.dms > 0 || counts.leadChat > 0) {
+            settled = true;
+            clearTimeout(timer);
+            cleanup();
+            resolve({ content: [{ type: "text" as const, text: JSON.stringify({ timedOut: false, ...counts }) }] });
+          }
+        });
+
+        timer = setTimeout(() => {
+          if (settled) return;
+          settled = true;
+          cleanup();
+          const counts = getCounts();
+          resolve({ content: [{ type: "text" as const, text: JSON.stringify({ timedOut: true, ...counts }) }] });
+        }, timeout);
+      });
     },
   );
 }

@@ -24,6 +24,16 @@ export class MessageSystem {
   private dms = new Map<string, ChatChannel>();
   private leadChat: ChatChannel = { messages: [], readCursors: new Map() };
   private sharedArtifacts = new Map<string, SharedArtifact[]>();
+  private listeners = new Set<(target: { type: string; id: string }) => void>();
+
+  onMessage(cb: (target: { type: string; id: string }) => void): () => void {
+    this.listeners.add(cb);
+    return () => this.listeners.delete(cb);
+  }
+
+  private notify(type: string, id: string): void {
+    for (const cb of this.listeners) cb({ type, id });
+  }
 
   private getOrCreateChannel(map: Map<string, ChatChannel>, key: string): ChatChannel {
     let channel = map.get(key);
@@ -76,6 +86,7 @@ export class MessageSystem {
   groupChatPost(teamId: string, agentId: string, agentRole: string, message: string): void {
     const channel = this.getOrCreateChannel(this.teamChats, teamId);
     this.postMessage(channel, agentId, agentRole, message);
+    this.notify("team", teamId);
   }
 
   groupChatRead(teamId: string, agentId: string): Message[] {
@@ -92,6 +103,7 @@ export class MessageSystem {
     const key = this.dmKey(fromAgentId, toAgentId);
     const channel = this.getOrCreateChannel(this.dms, key);
     this.postMessage(channel, fromAgentId, fromRole, message);
+    this.notify("dm", toAgentId);
   }
 
   dmRead(agentId: string, fromAgentId?: string): Message[] {
@@ -123,6 +135,7 @@ export class MessageSystem {
 
   leadChatPost(agentId: string, agentRole: string, teamName: string, message: string): void {
     this.postMessage(this.leadChat, agentId, agentRole, `[${teamName}] ${message}`);
+    this.notify("lead", "all");
   }
 
   leadChatRead(agentId: string): Message[] {
@@ -140,6 +153,7 @@ export class MessageSystem {
       this.sharedArtifacts.set(teamId, artifacts);
     }
     artifacts.push({ from: agentId, data, timestamp: new Date() });
+    this.notify("team", teamId);
   }
 
   getSharedArtifacts(teamId: string): SharedArtifact[] {
@@ -177,6 +191,8 @@ export class MessageSystem {
   }
 
   dissolveTeamWithAgents(teamId: string, agentIds: string[]): void {
+    for (const id of agentIds) this.notify("dissolve", id);
+
     this.teamChats.delete(teamId);
     this.sharedArtifacts.delete(teamId);
 
