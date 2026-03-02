@@ -500,6 +500,71 @@ describe("MessageSystem", () => {
     });
   });
 
+  describe("onMessage notifications", () => {
+    it("fires on groupChatPost", () => {
+      const events: Array<{ type: string; id: string }> = [];
+      ms.onMessage((t) => events.push(t));
+
+      ms.groupChatPost("team1", "agent-a", "dev", "hello");
+
+      assert.equal(events.length, 1);
+      assert.deepEqual(events[0], { type: "team", id: "team1" });
+    });
+
+    it("fires on dmSend with recipient agent ID", () => {
+      const events: Array<{ type: string; id: string }> = [];
+      ms.onMessage((t) => events.push(t));
+
+      ms.dmSend("agent-a", "agent-b", "dev", "hey");
+
+      assert.equal(events.length, 1);
+      assert.deepEqual(events[0], { type: "dm", id: "agent-b" });
+    });
+
+    it("fires on leadChatPost", () => {
+      const events: Array<{ type: string; id: string }> = [];
+      ms.onMessage((t) => events.push(t));
+
+      ms.leadChatPost("lead-a", "lead", "team1", "status");
+
+      assert.equal(events.length, 1);
+      assert.deepEqual(events[0], { type: "lead", id: "all" });
+    });
+
+    it("fires on shareArtifact", () => {
+      const events: Array<{ type: string; id: string }> = [];
+      ms.onMessage((t) => events.push(t));
+
+      ms.shareArtifact("team1", "agent-a", "data");
+
+      assert.equal(events.length, 1);
+      assert.deepEqual(events[0], { type: "team", id: "team1" });
+    });
+
+    it("cleanup function removes listener", () => {
+      const events: Array<{ type: string; id: string }> = [];
+      const cleanup = ms.onMessage((t) => events.push(t));
+
+      ms.groupChatPost("team1", "agent-a", "dev", "msg1");
+      assert.equal(events.length, 1);
+
+      cleanup();
+      ms.groupChatPost("team1", "agent-a", "dev", "msg2");
+      assert.equal(events.length, 1);
+    });
+
+    it("dissolveTeamWithAgents fires dissolve notifications before cleanup", () => {
+      const events: Array<{ type: string; id: string }> = [];
+      ms.onMessage((t) => events.push(t));
+
+      ms.dissolveTeamWithAgents("team1", ["agent-a", "agent-b"]);
+
+      assert.equal(events.length, 2);
+      assert.deepEqual(events[0], { type: "dissolve", id: "agent-a" });
+      assert.deepEqual(events[1], { type: "dissolve", id: "agent-b" });
+    });
+  });
+
   describe("cross-cutting scenarios", () => {
     it("group chat + DM + lead chat + artifacts all work together", () => {
       ms.groupChatPost("team1", "lead-1", "lead", "team standup");
