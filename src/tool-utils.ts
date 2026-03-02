@@ -17,7 +17,7 @@ export function toolJson(data: unknown) {
   };
 }
 
-export const WORKER_TIMEOUT_MS = 30 * 60 * 1000;
+export const WORKER_TIMEOUT_MS = 180 * 60 * 1000;
 
 export function withTimeout<T>(
   fn: (signal: AbortSignal) => Promise<T>,

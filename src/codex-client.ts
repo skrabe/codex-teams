@@ -4,7 +4,7 @@ import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js"
 import type { Agent } from "./types.js";
 import type { TeamManager } from "./state.js";
 
-const CODEX_TIMEOUT_MS = 60 * 60 * 1000;
+const CODEX_TIMEOUT_MS = 180 * 60 * 1000;
 
 export class CodexClientManager {
   private client!: Client;
@@ -15,6 +15,7 @@ export class CodexClientManager {
   private stateManager: TeamManager | null = null;
   private agentTokens = new Map<string, string>();
   private agentLocks = new Map<string, Promise<unknown>>();
+  private activeControllers = new Map<string, AbortController>();
   private reconnectPromise: Promise<void> | null = null;
 
   setCommsPort(port: number): void {
@@ -99,6 +100,24 @@ export class CodexClientManager {
     }
   }
 
+  abortAgent(agentId: string): boolean {
+    const controller = this.activeControllers.get(agentId);
+    if (controller) {
+      controller.abort();
+      this.activeControllers.delete(agentId);
+      return true;
+    }
+    return false;
+  }
+
+  abortTeam(agentIds: string[]): string[] {
+    const aborted: string[] = [];
+    for (const id of agentIds) {
+      if (this.abortAgent(id)) aborted.push(id);
+    }
+    return aborted;
+  }
+
   async sendToAgent(agent: Agent, message: string, signal?: AbortSignal): Promise<string> {
     const prev = this.agentLocks.get(agent.id) ?? Promise.resolve();
     const run = prev.then(
@@ -117,6 +136,13 @@ export class CodexClientManager {
       await this.reconnect();
     }
 
+    const controller = new AbortController();
+    if (signal) {
+      if (signal.aborted) controller.abort();
+      else signal.addEventListener("abort", () => controller.abort(), { once: true });
+    }
+    this.activeControllers.set(agent.id, controller);
+
     agent.status = "working";
 
     try {
@@ -132,8 +158,8 @@ export class CodexClientManager {
           config.mcp_servers = {
             "team-comms": {
               url: `http://localhost:${this.commsPort}/mcp?agent=${encodeURIComponent(agent.id)}&token=${token}`,
-              startup_timeout_sec: 120,
-              tool_timeout_sec: 60,
+              startup_timeout_sec: 300,
+              tool_timeout_sec: 300,
             },
           };
         }
@@ -153,7 +179,7 @@ export class CodexClientManager {
 
         result = await this.client.callTool({ name: "codex", arguments: args }, undefined, {
           timeout: CODEX_TIMEOUT_MS,
-          signal,
+          signal: controller.signal,
         });
 
         const structured = (result as Record<string, unknown>).structuredContent as
@@ -173,7 +199,7 @@ export class CodexClientManager {
             },
           },
           undefined,
-          { timeout: CODEX_TIMEOUT_MS, signal },
+          { timeout: CODEX_TIMEOUT_MS, signal: controller.signal },
         );
       }
 
@@ -197,6 +223,8 @@ export class CodexClientManager {
       }
 
       throw new Error(`Codex agent ${agent.id} error: ${msg}`);
+    } finally {
+      this.activeControllers.delete(agent.id);
     }
   }
 

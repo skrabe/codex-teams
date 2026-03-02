@@ -35,6 +35,10 @@ export function registerTeamTools(server: McpServer, state: TeamManager, message
                 .boolean()
                 .optional()
                 .describe("Team lead (xhigh reasoning). Defaults to false (high reasoning)."),
+              reasoningEffort: z
+                .enum(["xhigh", "high", "medium", "low", "minimal"])
+                .optional()
+                .describe("Reasoning effort level (default: xhigh for lead, high for workers)"),
             }),
           )
           .describe("Agent configurations"),

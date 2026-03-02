@@ -232,7 +232,7 @@ Only output the JSON array, nothing else. If you believe the errors are unfixabl
 
 function runVerifyCommand(command: string, cwd: string): Promise<{ passed: boolean; output: string }> {
   return new Promise((resolve) => {
-    exec(command, { cwd, timeout: 120_000 }, (error, stdout, stderr) => {
+    exec(command, { cwd, timeout: 600_000 }, (error, stdout, stderr) => {
       const output = (stdout + "\n" + stderr).trim();
       resolve({ passed: !error, output });
     });

@@ -9,6 +9,7 @@ import { registerTaskTools } from "./tools/task.js";
 import { registerResultTools } from "./tools/results.js";
 import { registerDispatchTools } from "./tools/dispatch.js";
 import { registerMissionTools } from "./tools/mission.js";
+import { registerSteerTools } from "./tools/steer.js";
 
 export function createServer(
   state: TeamManager,
@@ -29,6 +30,7 @@ export function createServer(
   if (messages) {
     registerDispatchTools(server, state, codex, messages);
     registerMissionTools(server, state, codex, messages);
+    registerSteerTools(server, state, codex, messages);
   }
 
   return server;

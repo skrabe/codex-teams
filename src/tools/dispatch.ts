@@ -30,6 +30,10 @@ export function registerDispatchTools(
                 .enum(["read-only", "workspace-write", "danger-full-access"])
                 .optional()
                 .describe("Sandbox mode"),
+              reasoningEffort: z
+                .enum(["xhigh", "high", "medium", "low", "minimal"])
+                .optional()
+                .describe("Reasoning effort level (default: xhigh for lead, high for workers)"),
             }),
           )
           .describe("Agent configs with their tasks"),
@@ -45,6 +49,7 @@ export function registerDispatchTools(
             specialization: a.specialization,
             isLead: a.isLead,
             sandbox: a.sandbox,
+            reasoningEffort: a.reasoningEffort,
             cwd: workDir,
           })),
         );
