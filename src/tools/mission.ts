@@ -8,7 +8,7 @@ import type { Message, MessageSystem } from "../messages.js";
 import type { Agent, Team } from "../types.js";
 import { withTimeout, WORKER_TIMEOUT_MS, toolError, toolJson } from "../tool-utils.js";
 
-type MissionPhase = "executing" | "verifying" | "fixing" | "reviewing" | "completed" | "error";
+type MissionPhase = "executing" | "verifying" | "fixing" | "completed" | "error";
 
 interface WorkerResult {
   agentId: string;
@@ -35,7 +35,7 @@ interface MissionState {
   verifyCommand?: string;
   maxVerifyRetries: number;
   verificationLog: VerificationAttempt[];
-  finalReport: string;
+  leadOutput: string;
   error?: string;
   comms?: {
     groupChat: Message[];
@@ -92,7 +92,8 @@ Your job is to align quickly, then keep execution moving.
    If other teams exist, use lead_chat_post/lead_chat_read/lead_chat_peek to coordinate
    with other team leads. Check lead_chat_peek periodically and relay only actionable updates.
 
-You will receive a follow-up message after all workers complete, asking you to compile a final report.
+When all workers complete, the mission ends. Your group_chat posts, shared artifacts, and your own output
+ARE the deliverable. share() your final assessment with key decisions, integration status, and remaining work.
 
 Follow the work methodology in your base instructions.
 
@@ -163,46 +164,6 @@ may need you right now. Full communication guidelines are in your base instructi
 
 Your agent ID: ${worker.id}
 Team ID: ${team.id}`;
-}
-
-function buildCompilationPrompt(
-  mission: MissionState,
-  workerResults: WorkerResult[],
-  verificationOutput?: string,
-): string {
-  const resultsSummary = workerResults
-    .map((r) => `--- ${r.agentId} (${r.role}) — ${r.status.toUpperCase()} ---\n${r.output}`)
-    .join("\n\n");
-
-  let verificationSection = "";
-  if (verificationOutput !== undefined) {
-    verificationSection = `\n=== VERIFICATION RESULTS ===\n${verificationOutput}\n`;
-  }
-
-  return `=== MISSION COMPILATION ===
-All workers have completed their tasks. It's time to compile the final report.
-
-=== MISSION OBJECTIVE ===
-${mission.objective}
-
-=== WORKER RESULTS ===
-${resultsSummary}
-${verificationSection}
-=== WHAT TO DO NOW ===
-1. Call group_chat_read to see the full conversation history.
-2. Call get_shared to review all shared artifacts and deliverables.
-3. Write a structured FINAL REPORT with:
-   - Mission objective (1 line)
-   - Key findings and conclusions — synthesize across workers, don't just list per-worker summaries
-   - Important decisions made and their rationale
-   - Actionable recommendations or deliverables
-   - Remaining work or known issues (if any)${verificationOutput !== undefined ? "\n   - Verification results and status" : ""}
-
-   IMPORTANT: Write for the person who commissioned this work — they want outcomes and prioritized
-   recommendations, not a narrative of what each worker did.
-   Reference shared artifacts by name/title rather than repeating their full content inline.
-   The reader has access to the raw artifacts and comms via get_mission_comms — your report should
-   synthesize and prioritize, not rehash everything. Focus on what matters most and why.`;
 }
 
 function buildFixPrompt(
@@ -279,11 +240,12 @@ async function runMission(
     const workerResults = await Promise.all(workerPromises);
     mission.workerResults = workerResults;
 
-    await leadPromise.catch(() => {});
+    mission.leadOutput = await leadPromise.catch((err) =>
+      err instanceof Error ? err.message : String(err),
+    );
 
     if (mission.verifyCommand) {
       mission.phase = "verifying";
-      let lastVerifyOutput = "";
 
       for (let attempt = 1; attempt <= mission.maxVerifyRetries + 1; attempt++) {
         const verification = await runVerifyCommand(mission.verifyCommand, lead.cwd);
@@ -292,7 +254,6 @@ async function runMission(
           passed: verification.passed,
           output: verification.output,
         });
-        lastVerifyOutput = verification.output;
 
         if (verification.passed) break;
 
@@ -337,19 +298,6 @@ async function runMission(
           mission.phase = "verifying";
         }
       }
-
-      mission.phase = "reviewing";
-      const lastVerification = mission.verificationLog[mission.verificationLog.length - 1];
-      const compilationPrompt = buildCompilationPrompt(
-        mission,
-        mission.workerResults,
-        `${lastVerification.passed ? "PASSED" : "FAILED"}\n${lastVerifyOutput}`,
-      );
-      mission.finalReport = await codex.sendToAgent(lead, compilationPrompt);
-    } else {
-      mission.phase = "reviewing";
-      const compilationPrompt = buildCompilationPrompt(mission, mission.workerResults);
-      mission.finalReport = await codex.sendToAgent(lead, compilationPrompt);
     }
 
     mission.phase = "completed";
@@ -476,7 +424,7 @@ export function registerMissionTools(
           verifyCommand,
           maxVerifyRetries: maxVerifyRetries ?? 2,
           verificationLog: [],
-          finalReport: "",
+          leadOutput: "",
         };
 
         missions.set(missionId, mission);
@@ -516,7 +464,8 @@ export function registerMissionTools(
   server.registerTool(
     "mission_status",
     {
-      description: "Check the status of a launched mission",
+      description:
+        "Check mission status. During execution: includes recent group chat and artifact count. When completed: includes full results.",
       inputSchema: {
         missionId: z.string().describe("Mission ID returned by launch_mission"),
       },
@@ -530,14 +479,47 @@ export function registerMissionTools(
         };
       }
 
-      return toolJson({
+      const base = {
         missionId: mission.id,
         phase: mission.phase,
         teamId: mission.teamId,
         leadId: mission.leadId,
         workerIds: mission.workerIds,
-        finalReport: mission.finalReport || undefined,
         error: mission.error,
+      };
+
+      if (mission.phase === "completed" || mission.phase === "error") {
+        const formatMsg = (m: Message) => ({
+          from: `${m.fromRole} (${m.from})`,
+          text: m.text,
+          time: m.timestamp.toISOString(),
+        });
+        return toolJson({
+          ...base,
+          leadOutput: mission.leadOutput || undefined,
+          workerResults: mission.workerResults,
+          sharedArtifacts: mission.comms?.sharedArtifacts.map((a) => ({
+            from: a.from,
+            data: a.data,
+            time: a.timestamp.toISOString(),
+          })),
+          verificationLog: mission.verificationLog.length > 0 ? mission.verificationLog : undefined,
+          recentChat: mission.comms?.groupChat.slice(-10).map(formatMsg),
+        });
+      }
+
+      const liveChat = messages.getTeamChatMessages(mission.teamId);
+      const liveArtifacts = messages.getSharedArtifacts(mission.teamId);
+      const formatMsg = (m: Message) => ({
+        from: `${m.fromRole} (${m.from})`,
+        text: m.text,
+        time: m.timestamp.toISOString(),
+      });
+
+      return toolJson({
+        ...base,
+        recentChat: liveChat.slice(-10).map(formatMsg),
+        sharedArtifactCount: liveArtifacts.length,
       });
     },
   );
@@ -546,7 +528,7 @@ export function registerMissionTools(
     "await_mission",
     {
       description:
-        "Block until a mission completes (or errors). Returns the lead's final report. Use get_mission_comms for raw communication logs.",
+        "Block until a mission completes (or errors). Returns lead output, worker results, shared artifacts, and verification log.",
       inputSchema: {
         missionId: z.string().describe("Mission ID returned by launch_mission"),
         pollIntervalMs: z.number().optional().describe("Poll interval in ms (default: 3000)"),
@@ -560,7 +542,14 @@ export function registerMissionTools(
         return toolJson({
           missionId: mission.id,
           phase: mission.phase,
-          finalReport: mission.finalReport,
+          leadOutput: mission.leadOutput || undefined,
+          workerResults: mission.workerResults,
+          sharedArtifacts: mission.comms?.sharedArtifacts.map((a) => ({
+            from: a.from,
+            data: a.data,
+            time: a.timestamp.toISOString(),
+          })),
+          verificationLog: mission.verificationLog.length > 0 ? mission.verificationLog : undefined,
           error: mission.error,
         });
       } catch (error) {
@@ -674,5 +663,5 @@ export function registerMissionTools(
   );
 }
 
-export { buildLeadPrompt, buildWorkerPrompt, buildCompilationPrompt, buildFixPrompt, runVerifyCommand };
+export { buildLeadPrompt, buildWorkerPrompt, buildFixPrompt, runVerifyCommand };
 export type { MissionState, WorkerResult, VerificationAttempt };

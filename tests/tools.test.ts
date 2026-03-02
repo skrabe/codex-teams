@@ -208,80 +208,6 @@ describe("Tool Handlers (e2e with mock codex)", () => {
     });
   });
 
-  describe("relay", () => {
-    it("relays output from one agent to another", async () => {
-      const team = state.createTeam("t", [{ role: "a" }, { role: "b" }]);
-      const [agentA, agentB] = Array.from(team.agents.values());
-      agentA.lastOutput = "Here is my analysis...";
-      codex.nextResponse = "Got it, thanks!";
-
-      const result = await callTool(server, "relay", {
-        teamId: team.id,
-        fromAgentId: agentA.id,
-        toAgentId: agentB.id,
-      });
-
-      const data = JSON.parse(result.content[0].text);
-      assert.equal(data.relayedTo, agentB.id);
-      assert.equal(codex.calls[0].message, "Here is my analysis...");
-    });
-
-    it("relays with prefix", async () => {
-      const team = state.createTeam("t", [{ role: "a" }, { role: "b" }]);
-      const [agentA, agentB] = Array.from(team.agents.values());
-      agentA.lastOutput = "code review done";
-
-      await callTool(server, "relay", {
-        teamId: team.id,
-        fromAgentId: agentA.id,
-        toAgentId: agentB.id,
-        prefix: "The lead reviewed your code:",
-      });
-
-      assert.ok(codex.calls[0].message.startsWith("The lead reviewed your code:"));
-      assert.ok(codex.calls[0].message.includes("code review done"));
-    });
-
-    it("relays to all other agents", async () => {
-      const team = state.createTeam("t", [{ role: "a" }, { role: "b" }, { role: "c" }]);
-      const [agentA] = Array.from(team.agents.values());
-      agentA.lastOutput = "shared context";
-
-      const result = await callTool(server, "relay", {
-        teamId: team.id,
-        fromAgentId: agentA.id,
-        toAll: true,
-      });
-
-      const data = JSON.parse(result.content[0].text);
-      assert.equal(data.length, 2);
-    });
-
-    it("errors when agent has no output", async () => {
-      const team = state.createTeam("t", [{ role: "a" }, { role: "b" }]);
-      const [agentA, agentB] = Array.from(team.agents.values());
-
-      const result = await callTool(server, "relay", {
-        teamId: team.id,
-        fromAgentId: agentA.id,
-        toAgentId: agentB.id,
-      });
-      assert.equal(result.isError, true);
-    });
-
-    it("errors when neither toAgentId nor toAll", async () => {
-      const team = state.createTeam("t", [{ role: "a" }]);
-      const [agentA] = Array.from(team.agents.values());
-      agentA.lastOutput = "stuff";
-
-      const result = await callTool(server, "relay", {
-        teamId: team.id,
-        fromAgentId: agentA.id,
-      });
-      assert.equal(result.isError, true);
-    });
-  });
-
   describe("assign_task", () => {
     it("assigns and auto-starts task with no deps", async () => {
       const team = state.createTeam("t", [{ role: "dev" }]);
@@ -396,26 +322,4 @@ describe("Tool Handlers (e2e with mock codex)", () => {
     });
   });
 
-  describe("get_team_report", () => {
-    it("returns full team report", async () => {
-      const team = state.createTeam("t", [{ role: "a" }, { role: "b" }]);
-      const [agentA, agentB] = Array.from(team.agents.keys());
-      state.createTask(team.id, agentA, "Task A");
-      const taskB = state.createTask(team.id, agentB, "Task B");
-      state.completeTask(team.id, taskB.id, "done");
-
-      const result = await callTool(server, "get_team_report", { teamId: team.id });
-      const data = JSON.parse(result.content[0].text);
-
-      assert.equal(data.agents.length, 2);
-      assert.equal(data.taskSummary.total, 2);
-      assert.equal(data.taskSummary.pending, 1);
-      assert.equal(data.taskSummary.completed, 1);
-    });
-
-    it("errors for nonexistent team", async () => {
-      const result = await callTool(server, "get_team_report", { teamId: "nope" });
-      assert.equal(result.isError, true);
-    });
-  });
 });

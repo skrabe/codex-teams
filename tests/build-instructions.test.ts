@@ -131,7 +131,6 @@ describe("buildInstructions", () => {
     assert.ok(instr.includes("COMMUNICATING"));
     assert.ok(instr.includes("share()"));
     assert.ok(instr.includes("get_shared"));
-    assert.ok(instr.includes("STAYING RESPONSIVE"));
     assert.ok(instr.includes("ANTI-PATTERNS"));
   });
 

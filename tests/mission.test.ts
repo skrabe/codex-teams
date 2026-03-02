@@ -144,7 +144,7 @@ describe("launch_mission + mission_status (async model)", () => {
     assert.ok(workerCall.message.includes("group_chat_read"), "Should mention group_chat_read");
   });
 
-  it("mission completes with final report", async () => {
+  it("mission completes with lead output and worker results", async () => {
     codex.defaultResponse = "done";
 
     const result = await callTool(server, "launch_mission", {
@@ -155,22 +155,15 @@ describe("launch_mission + mission_status (async model)", () => {
 
     const { missionId, leadId } = JSON.parse(result.content[0].text);
 
-    codex.responseMap.set(leadId, [
-      "lead initial done",
-      "Final mission report: everything completed successfully",
-    ]);
-
-    await waitFor(() => {
-      const statusCalls = codex.calls.filter((c) => c.agentId === leadId);
-      return statusCalls.length >= 2;
-    }, 10000);
-
+    await waitFor(() => codex.calls.length >= 2, 10000);
     await new Promise((r) => setTimeout(r, 200));
 
     const statusResult = await callTool(server, "mission_status", { missionId });
     const status = JSON.parse(statusResult.content[0].text);
     assert.equal(status.phase, "completed");
-    assert.ok(status.finalReport);
+    assert.ok(status.leadOutput);
+    assert.ok(status.workerResults);
+    assert.equal(status.workerResults.length, 1);
   });
 
   it("handles worker errors gracefully", async () => {
@@ -190,13 +183,9 @@ describe("launch_mission + mission_status (async model)", () => {
       team: [{ role: "lead", isLead: true }, { role: "good-worker" }, { role: "bad-worker" }],
     });
 
-    const { missionId, leadId } = JSON.parse(result.content[0].text);
+    const { missionId } = JSON.parse(result.content[0].text);
 
-    await waitFor(() => {
-      const leadCalls = codex.calls.filter((c) => c.agentId === leadId);
-      return leadCalls.length >= 2;
-    }, 10000);
-
+    await waitFor(() => codex.calls.length >= 3, 10000);
     await new Promise((r) => setTimeout(r, 200));
 
     const statusResult = await callTool(server, "mission_status", { missionId });
@@ -226,13 +215,13 @@ describe("launch_mission + mission_status (async model)", () => {
 
     const { missionId } = JSON.parse(launchResult.content[0].text);
 
-    await waitFor(() => codex.calls.length >= 1, 3000);
+    await waitFor(() => codex.calls.length >= 2, 3000);
     await new Promise((r) => setTimeout(r, 300));
 
     const statusResult = await callTool(server, "mission_status", { missionId });
     const status = JSON.parse(statusResult.content[0].text);
-    assert.equal(status.phase, "error");
-    assert.ok(status.error?.includes("Lead crashed"));
+    assert.equal(status.phase, "completed");
+    assert.ok(status.leadOutput?.includes("Lead crashed"));
   });
 
   it("requires a lead in the team", async () => {
@@ -265,23 +254,17 @@ describe("launch_mission + mission_status (async model)", () => {
       verifyCommand: "echo 'all tests pass'",
     });
 
-    const { missionId, leadId } = JSON.parse(result.content[0].text);
+    const { missionId } = JSON.parse(result.content[0].text);
 
-    await waitFor(() => {
-      const leadCalls = codex.calls.filter((c) => c.agentId === leadId);
-      return leadCalls.some((c) => c.message.includes("MISSION COMPILATION"));
-    }, 10000);
-
-    await new Promise((r) => setTimeout(r, 200));
+    await waitFor(() => codex.calls.length >= 2, 10000);
+    await new Promise((r) => setTimeout(r, 500));
 
     const statusResult = await callTool(server, "mission_status", { missionId });
     const status = JSON.parse(statusResult.content[0].text);
     assert.equal(status.phase, "completed");
-
-    const compilationCall = codex.calls.find(
-      (c) => c.agentId === leadId && c.message.includes("VERIFICATION RESULTS"),
-    );
-    assert.ok(compilationCall, "Compilation prompt should include verification results");
+    assert.ok(status.verificationLog);
+    assert.ok(status.verificationLog.length > 0);
+    assert.equal(status.verificationLog[0].passed, true);
   });
 
   it("retries verification on failure", async () => {
@@ -295,13 +278,11 @@ describe("launch_mission + mission_status (async model)", () => {
       maxVerifyRetries: 1,
     });
 
-    const { missionId, leadId, workerIds } = JSON.parse(result.content[0].text);
+    const { missionId, workerIds } = JSON.parse(result.content[0].text);
 
-    let verifyCallCount = 0;
     const origSend = codex.sendToAgent.bind(codex);
     codex.sendToAgent = async (agent: Agent, message: string) => {
       if (agent.isLead && message.includes("VERIFICATION FAILED")) {
-        verifyCallCount++;
         codex.calls.push({ agentId: agent.id, message });
         agent.status = "working";
         agent.threadId = agent.threadId ?? `thread-${agent.id}`;
@@ -313,12 +294,8 @@ describe("launch_mission + mission_status (async model)", () => {
       return origSend(agent, message);
     };
 
-    await waitFor(() => {
-      const statusCalls = codex.calls.filter((c) => c.agentId === leadId);
-      return statusCalls.some((c) => c.message.includes("MISSION COMPILATION"));
-    }, 10000);
-
-    await new Promise((r) => setTimeout(r, 200));
+    await waitFor(() => codex.calls.length >= 2, 10000);
+    await new Promise((r) => setTimeout(r, 500));
 
     const statusResult = await callTool(server, "mission_status", { missionId });
     const status = JSON.parse(statusResult.content[0].text);
@@ -336,7 +313,7 @@ describe("launch_mission + mission_status (async model)", () => {
       maxVerifyRetries: 1,
     });
 
-    const { missionId, leadId, workerIds } = JSON.parse(result.content[0].text);
+    const { missionId, workerIds } = JSON.parse(result.content[0].text);
 
     const origSend = codex.sendToAgent.bind(codex);
     codex.sendToAgent = async (agent: Agent, message: string) => {
@@ -352,18 +329,14 @@ describe("launch_mission + mission_status (async model)", () => {
       return origSend(agent, message);
     };
 
-    await waitFor(() => {
-      const leadCalls = codex.calls.filter((c) => c.agentId === leadId);
-      return leadCalls.some((c) => c.message.includes("MISSION COMPILATION"));
-    }, 10000);
-
-    await new Promise((r) => setTimeout(r, 200));
+    await waitFor(() => codex.calls.length >= 2, 10000);
+    await new Promise((r) => setTimeout(r, 1000));
 
     const statusResult = await callTool(server, "mission_status", { missionId });
     const status = JSON.parse(statusResult.content[0].text);
     assert.equal(status.phase, "completed");
-
-    const compilationCall = codex.calls.find((c) => c.agentId === leadId && c.message.includes("FAILED"));
-    assert.ok(compilationCall, "Compilation should mention failure");
+    assert.ok(status.verificationLog);
+    assert.ok(status.verificationLog.length > 0);
+    assert.equal(status.verificationLog[status.verificationLog.length - 1].passed, false);
   });
 });
