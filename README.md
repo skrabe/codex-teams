@@ -32,8 +32,8 @@ Teams auto-dissolve when done. Code never leaves your machine without your appro
 ### Install
 
 ```bash
-/plugin marketplace add skrabe/codex-teams
-/plugin install codex-teams@codex-teams
+/plugin marketplace add skrabe/skrabe-plugins
+/plugin install codex-teams@skrabe-plugins
 ```
 
 ## Examples
@@ -105,8 +105,7 @@ node --import tsx --test tests/*.test.ts
 ## Uninstall
 
 ```bash
-/plugin uninstall codex-teams@codex-teams
-# or: claude mcp remove codex-teams
+/plugin uninstall codex-teams@skrabe-plugins
 ```
 
 ## License
