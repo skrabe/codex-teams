@@ -26,34 +26,25 @@ Teams auto-dissolve when done. Code never leaves your machine without your appro
 ### Prerequisites
 
 - Node.js 18+
-- [Claude Code](https://code.claude.com/docs)
+- [Claude Code](https://code.claude.com/docs) or any MCP-compatible client
 - [Codex CLI](https://github.com/openai/codex) installed and on `PATH`
 
 ### Install (Claude Code)
 
 ```bash
-/plugin marketplace add skrabe/skrabe-plugins
-/plugin install codex-teams@skrabe-plugins
+claude mcp add-json codex-teams --scope user '{"command":"npx","args":["-y","codex-teams"]}'
 ```
 
-### Install (other MCP clients)
+### Install (Cursor, Windsurf, VS Code, etc.)
 
-Clone and build:
-
-```bash
-git clone https://github.com/skrabe/codex-teams.git
-cd codex-teams
-npm install && npm run bundle
-```
-
-Then add to your MCP client config (Cursor, Windsurf, VS Code, etc.):
+Add to your MCP client config:
 
 ```json
 {
   "mcpServers": {
     "codex-teams": {
-      "command": "node",
-      "args": ["/absolute/path/to/codex-teams/dist/index.cjs"]
+      "command": "npx",
+      "args": ["-y", "codex-teams"]
     }
   }
 }
@@ -128,7 +119,10 @@ node --import tsx --test tests/*.test.ts
 ## Uninstall
 
 ```bash
-/plugin uninstall codex-teams@skrabe-plugins
+# Claude Code
+claude mcp remove codex-teams
+
+# Other clients: remove the codex-teams entry from your MCP config
 ```
 
 ## License
