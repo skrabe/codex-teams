@@ -31,29 +31,10 @@ Teams auto-dissolve when done. Code never leaves your machine without your appro
 
 ### Install
 
-**Plugin marketplace (recommended):**
-
 ```bash
 /plugin marketplace add skrabe/codex-teams
 /plugin install codex-teams@codex-teams
 ```
-
-**From source:**
-
-```bash
-git clone https://github.com/skrabe/codex-teams.git
-cd codex-teams
-npm install && npm run build
-claude mcp add --transport stdio codex-teams -- node $(pwd)/build/index.js
-```
-
-### Verify
-
-```bash
-claude mcp list
-```
-
-You should see `codex-teams` listed.
 
 ## Examples
 
