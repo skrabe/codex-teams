@@ -37117,7 +37117,7 @@ var TeamManager = class {
       role: config2.role,
       specialization,
       threadId: null,
-      model: config2.model ?? "gpt-5.3-codex",
+      model: config2.model ?? "gpt-5.4",
       sandbox: config2.sandbox ?? "workspace-write",
       baseInstructions: config2.baseInstructions ?? "",
       cwd: config2.cwd ?? process.cwd(),
@@ -47990,7 +47990,7 @@ function registerTeamTools(server, state, messages) {
             specialization: external_exports.string().optional().describe(
               "Agent's area of expertise (e.g. 'React/TypeScript frontend components', 'PostgreSQL database design and optimization')"
             ),
-            model: external_exports.string().optional().describe("Model (default: gpt-5.3-codex)"),
+            model: external_exports.string().optional().describe("Model (default: gpt-5.4)"),
             sandbox: external_exports.enum(["read-only", "workspace-write", "danger-full-access"]).optional().describe("Sandbox mode (default: workspace-write)"),
             baseInstructions: external_exports.string().optional().describe("System instructions for agent"),
             cwd: external_exports.string().optional().describe("Working directory"),
@@ -48066,7 +48066,7 @@ function registerAgentTools(server, state) {
         teamId: external_exports.string().describe("Team ID"),
         role: external_exports.string().describe("Agent role/name"),
         specialization: external_exports.string().optional().describe("Agent's area of expertise"),
-        model: external_exports.string().optional().describe("Model (default: gpt-5.3-codex)"),
+        model: external_exports.string().optional().describe("Model (default: gpt-5.4)"),
         sandbox: external_exports.enum(["read-only", "workspace-write", "danger-full-access"]).optional().describe("Sandbox mode"),
         baseInstructions: external_exports.string().optional().describe("System instructions"),
         cwd: external_exports.string().optional().describe("Working directory"),

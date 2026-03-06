@@ -20,7 +20,7 @@ export function registerTeamTools(server: McpServer, state: TeamManager, message
                 .describe(
                   "Agent's area of expertise (e.g. 'React/TypeScript frontend components', 'PostgreSQL database design and optimization')",
                 ),
-              model: z.string().optional().describe("Model (default: gpt-5.3-codex)"),
+              model: z.string().optional().describe("Model (default: gpt-5.4)"),
               sandbox: z
                 .enum(["read-only", "workspace-write", "danger-full-access"])
                 .optional()

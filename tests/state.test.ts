@@ -32,7 +32,7 @@ describe("TeamManager", () => {
       const team = manager.createTeam("defaults", [{ role: "dev" }]);
       const agent = Array.from(team.agents.values())[0];
 
-      assert.equal(agent.model, "gpt-5.3-codex");
+      assert.equal(agent.model, "gpt-5.4");
       assert.equal(agent.sandbox, "workspace-write");
       assert.equal(agent.approvalPolicy, "never");
       assert.equal(agent.baseInstructions, "");

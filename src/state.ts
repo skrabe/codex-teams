@@ -144,7 +144,7 @@ export class TeamManager {
       role: config.role,
       specialization,
       threadId: null,
-      model: config.model ?? "gpt-5.3-codex",
+      model: config.model ?? "gpt-5.4",
       sandbox: config.sandbox ?? "workspace-write",
       baseInstructions: config.baseInstructions ?? "",
       cwd: config.cwd ?? process.cwd(),

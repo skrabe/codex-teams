@@ -11,7 +11,7 @@ export function registerAgentTools(server: McpServer, state: TeamManager) {
         teamId: z.string().describe("Team ID"),
         role: z.string().describe("Agent role/name"),
         specialization: z.string().optional().describe("Agent's area of expertise"),
-        model: z.string().optional().describe("Model (default: gpt-5.3-codex)"),
+        model: z.string().optional().describe("Model (default: gpt-5.4)"),
         sandbox: z
           .enum(["read-only", "workspace-write", "danger-full-access"])
           .optional()

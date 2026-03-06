@@ -105,7 +105,7 @@ Agents use sensible defaults. Override per-agent when needed:
 
 | Setting | Default | Options |
 |---|---|---|
-| Model | `gpt-5.3-codex` | Any supported model |
+| Model | `gpt-5.4` | Any supported model |
 | Sandbox | `workspace-write` | `read-only`, `workspace-write`, `danger-full-access` |
 | Reasoning | `xhigh` (lead) / `high` (workers) | `xhigh`, `high`, `medium`, `low` |
 
