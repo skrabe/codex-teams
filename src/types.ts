@@ -14,6 +14,7 @@ export interface AgentConfig {
   approvalPolicy?: ApprovalPolicy;
   reasoningEffort?: ReasoningEffort;
   isLead?: boolean;
+  fastMode?: boolean;
 }
 
 export interface Agent {
@@ -28,6 +29,7 @@ export interface Agent {
   approvalPolicy: ApprovalPolicy;
   reasoningEffort: ReasoningEffort;
   isLead: boolean;
+  fastMode: boolean;
   status: AgentStatus;
   lastOutput: string;
   tasks: string[];

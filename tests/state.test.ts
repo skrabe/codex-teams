@@ -41,6 +41,7 @@ describe("TeamManager", () => {
       assert.equal(agent.specialization, "");
       assert.equal(agent.reasoningEffort, "high");
       assert.equal(agent.isLead, false);
+      assert.equal(agent.fastMode, false);
       assert.equal(agent.status, "idle");
       assert.equal(agent.lastOutput, "");
       assert.equal(agent.threadId, null);

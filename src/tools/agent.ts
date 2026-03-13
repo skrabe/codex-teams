@@ -30,6 +30,7 @@ export function registerAgentTools(server: McpServer, state: TeamManager) {
           .enum(["xhigh", "high", "medium", "low", "minimal"])
           .optional()
           .describe("Reasoning effort level (default: xhigh for lead, high for workers)"),
+        fastMode: z.boolean().optional().describe("Enable fast output mode (service_tier=fast)"),
       },
     },
     async ({ teamId, ...config }) => {

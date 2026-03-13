@@ -153,6 +153,9 @@ export class CodexClientManager {
           model_reasoning_effort: agent.reasoningEffort,
           search: true,
         };
+        if (agent.fastMode) {
+          config.service_tier = "fast";
+        }
         if (this.commsPort !== null) {
           const token = this.generateAgentToken(agent.id);
           config.mcp_servers = {

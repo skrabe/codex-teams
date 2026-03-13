@@ -34,6 +34,7 @@ export function registerDispatchTools(
                 .enum(["xhigh", "high", "medium", "low", "minimal"])
                 .optional()
                 .describe("Reasoning effort level (default: xhigh for lead, high for workers)"),
+              fastMode: z.boolean().optional().describe("Enable fast output mode (service_tier=fast)"),
             }),
           )
           .describe("Agent configs with their tasks"),
@@ -50,6 +51,7 @@ export function registerDispatchTools(
             isLead: a.isLead,
             sandbox: a.sandbox,
             reasoningEffort: a.reasoningEffort,
+            fastMode: a.fastMode,
             cwd: workDir,
           })),
         );

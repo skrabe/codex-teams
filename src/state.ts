@@ -151,6 +151,7 @@ export class TeamManager {
       approvalPolicy: config.approvalPolicy ?? "never",
       reasoningEffort: config.reasoningEffort ?? (isLead ? "xhigh" : "high"),
       isLead,
+      fastMode: config.fastMode ?? false,
       status: "idle",
       lastOutput: "",
       tasks: [],

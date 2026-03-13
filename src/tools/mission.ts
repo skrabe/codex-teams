@@ -354,6 +354,7 @@ export function registerMissionTools(
                 .enum(["xhigh", "high", "medium", "low", "minimal"])
                 .optional()
                 .describe("Reasoning effort level (default: xhigh for lead, high for workers)"),
+              fastMode: z.boolean().optional().describe("Enable fast output mode (service_tier=fast)"),
             }),
           )
           .describe("Team composition"),
@@ -394,6 +395,7 @@ export function registerMissionTools(
             isLead: t.isLead,
             sandbox: t.sandbox,
             reasoningEffort: t.reasoningEffort,
+            fastMode: t.fastMode,
             cwd: workDir,
           })),
         );
