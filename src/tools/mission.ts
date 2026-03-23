@@ -312,7 +312,7 @@ export function registerMissionTools(
               specialization: z.string().optional().describe("Agent specialization"),
               isLead: z.boolean().optional().describe("Is this the team lead? Exactly one must be true."),
               sandbox: z
-                .enum(["read-only", "workspace-write", "danger-full-access"])
+                .enum(["plan-mode", "workspace-write", "danger-full-access"])
                 .optional()
                 .describe("Sandbox mode"),
               reasoningEffort: z

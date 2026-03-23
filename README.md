@@ -129,7 +129,7 @@ Agents use sensible defaults. Override per-agent when launching a mission:
 | Setting | Default | Options |
 |---|---|---|
 | **Model** | `gpt-5.4` | Any model supported by Codex CLI |
-| **Sandbox** | `workspace-write` | `read-only`, `workspace-write`, `danger-full-access` |
+| **Sandbox** | `workspace-write` | `plan-mode`, `workspace-write`, `danger-full-access` |
 | **Reasoning** | `xhigh` (lead) / `high` (workers) | `xhigh`, `high`, `medium`, `low`, `minimal` |
 | **Fast Mode** | `false` | `true` for faster output (service_tier=fast) |
 

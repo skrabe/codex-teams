@@ -53,7 +53,7 @@ describe("TeamManager", () => {
         {
           role: "lead",
           model: "o4-mini",
-          sandbox: "read-only",
+          sandbox: "plan-mode",
           baseInstructions: "Focus on architecture.",
           cwd: "/tmp/test",
           approvalPolicy: "on-request",
@@ -64,7 +64,7 @@ describe("TeamManager", () => {
       const agent = Array.from(team.agents.values())[0];
 
       assert.equal(agent.model, "o4-mini");
-      assert.equal(agent.sandbox, "read-only");
+      assert.equal(agent.sandbox, "plan-mode");
       assert.equal(agent.cwd, "/tmp/test");
       assert.equal(agent.approvalPolicy, "on-request");
       assert.equal(agent.isLead, true);
