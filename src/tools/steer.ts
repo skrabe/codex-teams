@@ -53,6 +53,9 @@ export function registerSteerTools(
 
       const targetIds = targets.map((a) => a!.id);
       const aborted = codex.abortTeam(targetIds);
+      for (const id of aborted) {
+        codex.clearLock(id);
+      }
 
       messages.groupChatPost(
         teamId,

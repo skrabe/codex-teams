@@ -35,11 +35,11 @@ export function registerTaskTools(server: McpServer, state: TeamManager, codex: 
           const agent = state.getAgent(teamId, agentId);
           if (agent && agent.status !== "working") {
             task.status = "in-progress";
-            try {
-              await codex.sendToAgent(agent, description);
-            } catch {
+            const op = codex.sendToAgent(agent, description).catch((err) => {
+              console.error(`assign_task send error: ${err}`);
               task.status = "pending";
-            }
+            });
+            codex.trackOp(op);
           }
         }
 

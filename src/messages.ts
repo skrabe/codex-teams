@@ -73,14 +73,21 @@ export class MessageSystem {
 
   private readMessages(channel: ChatChannel, agentId: string): Message[] {
     const cursor = this.getCursor(channel, agentId);
-    const unread = channel.messages.slice(cursor).filter((m) => m.from !== agentId);
+    const result: Message[] = [];
+    for (let i = cursor; i < channel.messages.length; i++) {
+      if (channel.messages[i].from !== agentId) result.push(channel.messages[i]);
+    }
     channel.readCursors.set(agentId, channel.messages.length);
-    return unread;
+    return result;
   }
 
   private peekCount(channel: ChatChannel, agentId: string): number {
     const cursor = this.getCursor(channel, agentId);
-    return channel.messages.slice(cursor).filter((m) => m.from !== agentId).length;
+    let count = 0;
+    for (let i = cursor; i < channel.messages.length; i++) {
+      if (channel.messages[i].from !== agentId) count++;
+    }
+    return count;
   }
 
   groupChatPost(teamId: string, agentId: string, agentRole: string, message: string): void {
@@ -107,19 +114,21 @@ export class MessageSystem {
   }
 
   dmRead(agentId: string, fromAgentId?: string): Message[] {
+    if (fromAgentId) {
+      const key = this.dmKey(agentId, fromAgentId);
+      const channel = this.dms.get(key);
+      if (!channel) return [];
+      const cursor = this.getCursor(channel, agentId);
+      const result: Message[] = [];
+      for (let i = cursor; i < channel.messages.length; i++) {
+        if (channel.messages[i].from === fromAgentId) result.push(channel.messages[i]);
+      }
+      return result;
+    }
     const allUnread: Message[] = [];
     for (const [key, channel] of this.dms) {
       if (!this.isDmParticipant(key, agentId)) continue;
-      if (fromAgentId) {
-        const cursor = this.getCursor(channel, agentId);
-        const unread = channel.messages.slice(cursor);
-        const matching = unread.filter((m) => m.from === fromAgentId);
-        if (matching.length > 0) {
-          allUnread.push(...matching);
-        }
-      } else {
-        allUnread.push(...this.readMessages(channel, agentId));
-      }
+      allUnread.push(...this.readMessages(channel, agentId));
     }
     return allUnread.sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime());
   }
@@ -204,6 +213,7 @@ export class MessageSystem {
       }
     }
 
+    this.leadChat.messages = this.leadChat.messages.filter((m) => !agentSet.has(m.from));
     for (const id of agentIds) {
       this.leadChat.readCursors.delete(id);
     }

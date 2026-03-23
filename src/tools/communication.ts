@@ -20,18 +20,6 @@ export function registerCommunicationTools(server: McpServer, state: TeamManager
         if (!agent) {
           return { isError: true, content: [{ type: "text" as const, text: `Agent not found: ${agentId}` }] };
         }
-        if (agent.status === "working") {
-          return {
-            isError: true,
-            content: [
-              {
-                type: "text" as const,
-                text: `Agent ${agentId} is currently working. Wait for it to finish.`,
-              },
-            ],
-          };
-        }
-
         const output = await codex.sendToAgent(agent, message);
         return { content: [{ type: "text" as const, text: output }] };
       } catch (error) {
@@ -63,10 +51,8 @@ export function registerCommunicationTools(server: McpServer, state: TeamManager
           ? agentIds.map((id) => team.agents.get(id)).filter(Boolean)
           : Array.from(team.agents.values());
 
-        const available = targets.filter((a) => a!.status !== "working");
-
         const results = await Promise.allSettled(
-          available.map(async (agent) => {
+          targets.map(async (agent) => {
             const output = await codex.sendToAgent(agent!, message);
             return { agentId: agent!.id, role: agent!.role, status: "success" as const, output };
           }),
@@ -75,8 +61,8 @@ export function registerCommunicationTools(server: McpServer, state: TeamManager
         const summary = results.map((r, i) => {
           if (r.status === "fulfilled") return r.value;
           return {
-            agentId: available[i]!.id,
-            role: available[i]!.role,
+            agentId: targets[i]!.id,
+            role: targets[i]!.role,
             status: "error" as const,
             error: r.reason instanceof Error ? r.reason.message : String(r.reason),
           };

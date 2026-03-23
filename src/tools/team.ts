@@ -2,8 +2,9 @@ import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { TeamManager } from "../state.js";
 import type { MessageSystem } from "../messages.js";
+import type { CodexClientManager } from "../codex-client.js";
 
-export function registerTeamTools(server: McpServer, state: TeamManager, messages?: MessageSystem) {
+export function registerTeamTools(server: McpServer, state: TeamManager, messages?: MessageSystem, codex?: CodexClientManager) {
   server.registerTool(
     "create_team",
     {
@@ -88,9 +89,12 @@ export function registerTeamTools(server: McpServer, state: TeamManager, message
           return { isError: true, content: [{ type: "text" as const, text: `Team not found: ${teamId}` }] };
         }
 
+        const agentIds = Array.from(team.agents.keys());
         if (messages) {
-          const agentIds = Array.from(team.agents.keys());
           messages.dissolveTeamWithAgents(teamId, agentIds);
+        }
+        if (codex) {
+          for (const id of agentIds) codex.cleanupAgent(id);
         }
 
         state.dissolveTeam(teamId);

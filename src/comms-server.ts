@@ -35,9 +35,12 @@ export function registerCommsTools(
 ) {
   const err = (msg: string) => ({ isError: true as const, content: [{ type: "text" as const, text: msg }] });
 
+  let cachedCtx: ReturnType<typeof findAgentContext> | undefined;
+
   function resolve() {
     if (!boundAgentId) return null;
-    return findAgentContext(state, boundAgentId);
+    if (cachedCtx === undefined) cachedCtx = findAgentContext(state, boundAgentId);
+    return cachedCtx;
   }
 
   server.registerTool(

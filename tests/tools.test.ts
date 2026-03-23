@@ -139,7 +139,7 @@ describe("Tool Handlers (e2e with mock codex)", () => {
       assert.equal(codex.calls[0].message, "Hi there");
     });
 
-    it("rejects when agent is working", async () => {
+    it("queues message to working agent", async () => {
       const team = state.createTeam("t", [{ role: "dev" }]);
       const agent = Array.from(team.agents.values())[0];
       agent.status = "working";
@@ -148,7 +148,7 @@ describe("Tool Handlers (e2e with mock codex)", () => {
         agentId: agent.id,
         message: "test",
       });
-      assert.equal(result.isError, true);
+      assert.equal(result.isError, undefined);
     });
 
     it("returns error for nonexistent agent", async () => {
@@ -193,7 +193,7 @@ describe("Tool Handlers (e2e with mock codex)", () => {
       assert.equal(data.length, 1);
     });
 
-    it("skips working agents", async () => {
+    it("broadcasts to all agents including working ones", async () => {
       const team = state.createTeam("t", [{ role: "a" }, { role: "b" }]);
       const [, agent2] = Array.from(team.agents.values());
       agent2.status = "working";
@@ -204,7 +204,7 @@ describe("Tool Handlers (e2e with mock codex)", () => {
       });
 
       const data = JSON.parse(result.content[0].text);
-      assert.equal(data.length, 1);
+      assert.equal(data.length, 2);
     });
   });
 

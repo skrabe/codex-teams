@@ -118,6 +118,16 @@ export class CodexClientManager {
     return aborted;
   }
 
+  cleanupAgent(agentId: string): void {
+    this.agentTokens.delete(agentId);
+    this.agentLocks.delete(agentId);
+    this.activeControllers.delete(agentId);
+  }
+
+  clearLock(agentId: string): void {
+    this.agentLocks.delete(agentId);
+  }
+
   async sendToAgent(agent: Agent, message: string, signal?: AbortSignal): Promise<string> {
     const prev = this.agentLocks.get(agent.id) ?? Promise.resolve();
     const run = prev.then(
@@ -128,6 +138,7 @@ export class CodexClientManager {
       agent.id,
       run.catch(() => {}),
     );
+    this.trackOp(run);
     return run;
   }
 

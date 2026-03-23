@@ -71,7 +71,7 @@ export function createServer(
     contents: [{ uri: "codex-teams://guide", text: ORCHESTRATOR_GUIDE, mimeType: "text/markdown" }],
   }));
 
-  registerTeamTools(server, state, messages);
+  registerTeamTools(server, state, messages, codex);
   registerAgentTools(server, state);
   registerCommunicationTools(server, state, codex);
   registerTaskTools(server, state, codex);

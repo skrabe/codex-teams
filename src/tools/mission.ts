@@ -104,56 +104,18 @@ function buildWorkerPrompt(
   mission: MissionState,
   team: Team,
   worker: Agent,
-  lead: Agent,
-  allWorkers: Agent[],
 ): string {
-  const teammateList = allWorkers
-    .filter((w) => w.id !== worker.id)
-    .map((w) => `  - @${w.id} (${w.role}${w.specialization ? " — " + w.specialization : ""})`)
-    .join("\n");
-
-  return `=== YOUR ROLE ===
-You are ${worker.id} (${worker.role}${worker.specialization ? " — " + worker.specialization : ""}).
-
-=== MISSION OBJECTIVE ===
+  return `=== MISSION OBJECTIVE ===
 ${mission.objective}
 
-=== YOUR TEAM ===
-Lead: @${lead.id} (${lead.role})
-Teammates:
-${teammateList || "  (none — you are the only worker)"}
-
-=== WHAT TO DO RIGHT NOW ===
-
-1. BOOTSTRAP
-   Call group_chat_read() immediately.
-   - Plan is there → read your assignment and begin execution.
-   - No plan yet → start exploring the codebase relevant to the objective. Build context
-     for what you'll likely need to do (read key files, understand existing patterns).
-     After initial exploration, call wait_for_messages(15000) to catch the plan.
-   - Plan arrives → read group_chat, find your assignment, and execute.
-   If the plan has a material issue with your scope, raise it with specifics in group_chat.
-   If it looks right, execute — do not post just to agree.
-
-2. EXECUTE YOUR SCOPE
-   Own your piece. Make decisions within your scope (naming, structure, approach details)
-   without asking permission — document them in share(). Only escalate decisions that cross
-   your scope boundary: shared interfaces, data formats, or choices that affect another
-   agent's work.
-   Persist until your work is fully complete. If something fails, diagnose and fix it.
-   If an approach fails after two attempts, try an alternative.
-
-3. DELIVER AND VERIFY
-   When your work is complete:
-   (a) Verify it works — run relevant tests if available.
-   (b) share() your deliverable: what you built, key decisions, integration points, gotchas.
-   (c) Check get_shared() — does your work integrate with what teammates shared?
-   (d) Post to group_chat: "Done with [scope]. [One sentence summary + any gotchas.]"
-   (e) If teammates are still working, check if anyone is blocked on you or needs help.
-
-Stay responsive: check messages between milestones (after completing a file, after tests).
-Use wait_for_messages() when idle between work chunks. Answer teammate questions directly —
-don't wait for the lead. Full communication guidelines are in your base instructions.
+=== BOOTSTRAP ===
+Call group_chat_read() immediately.
+- Plan is there → read your assignment and begin execution.
+- No plan yet → start exploring the codebase relevant to the objective. Build context
+  for what you'll likely need to do. After initial exploration, call wait_for_messages(15000) to catch the plan.
+- Plan arrives → read group_chat, find your assignment, and execute.
+If the plan has a material issue with your scope, raise it with specifics in group_chat.
+If it looks right, execute — do not post just to agree.
 
 Your agent ID: ${worker.id}
 Team ID: ${team.id}`;
@@ -214,7 +176,7 @@ async function runMission(
     );
 
     const workerPromises = workers.map((worker) => {
-      const workerPrompt = buildWorkerPrompt(mission, team, worker, lead, workers);
+      const workerPrompt = buildWorkerPrompt(mission, team, worker);
       return withTimeout((signal) => codex.sendToAgent(worker, workerPrompt, signal), WORKER_TIMEOUT_MS, `Worker ${worker.id}`)
         .then((output) => ({
           agentId: worker.id,
@@ -264,27 +226,29 @@ async function runMission(
           }
           fixAssignments = fixAssignments.filter((a) => mission.workerIds.includes(a.agentId));
 
-          if (fixAssignments.length > 0) {
-            const fixResults = await Promise.allSettled(
-              fixAssignments.map(({ agentId, task }) => {
-                const worker = team.agents.get(agentId);
-                if (!worker) return Promise.reject(new Error(`Agent not found: ${agentId}`));
-                return codex.sendToAgent(worker, task);
-              }),
-            );
+          if (fixAssignments.length === 0) {
+            break;
+          }
 
-            for (let i = 0; i < fixAssignments.length; i++) {
-              const r = fixResults[i];
-              const existing = mission.workerResults.find((wr) => wr.agentId === fixAssignments[i].agentId);
-              if (existing) {
-                existing.status = r.status === "fulfilled" ? "success" : "error";
-                existing.output =
-                  r.status === "fulfilled"
-                    ? (r.value as string)
-                    : r.reason instanceof Error
-                      ? r.reason.message
-                      : String(r.reason);
-              }
+          const fixResults = await Promise.allSettled(
+            fixAssignments.map(({ agentId, task }) => {
+              const worker = team.agents.get(agentId);
+              if (!worker) return Promise.reject(new Error(`Agent not found: ${agentId}`));
+              return codex.sendToAgent(worker, task);
+            }),
+          );
+
+          for (let i = 0; i < fixAssignments.length; i++) {
+            const r = fixResults[i];
+            const existing = mission.workerResults.find((wr) => wr.agentId === fixAssignments[i].agentId);
+            if (existing) {
+              existing.status = r.status === "fulfilled" ? "success" : "error";
+              existing.output =
+                r.status === "fulfilled"
+                  ? (r.value as string)
+                  : r.reason instanceof Error
+                    ? r.reason.message
+                    : String(r.reason);
             }
           }
 
@@ -306,6 +270,7 @@ async function runMission(
       sharedArtifacts: messages.getSharedArtifacts(mission.teamId),
     };
     messages.dissolveTeamWithAgents(mission.teamId, agentIds);
+    for (const id of agentIds) codex.cleanupAgent(id);
     state.dissolveTeam(mission.teamId);
 
     setTimeout(() => missions.delete(mission.id), 30 * 60 * 1000).unref();

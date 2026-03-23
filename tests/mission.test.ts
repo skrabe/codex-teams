@@ -132,7 +132,7 @@ describe("launch_mission + mission_status (async model)", () => {
       team: [{ role: "lead", isLead: true }, { role: "dev" }],
     });
 
-    const { leadId, workerIds } = JSON.parse(result.content[0].text);
+    const { workerIds } = JSON.parse(result.content[0].text);
     const workerId = workerIds[0];
 
     await waitFor(() => codex.calls.length >= 2);
@@ -140,7 +140,6 @@ describe("launch_mission + mission_status (async model)", () => {
     const workerCall = codex.calls.find((c) => c.agentId === workerId);
     assert.ok(workerCall, "Worker should be called");
     assert.ok(workerCall.message.includes(workerId), "Should contain worker's own ID");
-    assert.ok(workerCall.message.includes(leadId), "Should contain lead ID");
     assert.ok(workerCall.message.includes("group_chat_read"), "Should mention group_chat_read");
   });
 
