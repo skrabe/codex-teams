@@ -37124,6 +37124,7 @@ var TeamManager = class {
       approvalPolicy: config2.approvalPolicy ?? "never",
       reasoningEffort: config2.reasoningEffort ?? (isLead ? "xhigh" : "high"),
       isLead,
+      fastMode: config2.fastMode ?? false,
       status: "idle",
       lastOutput: "",
       tasks: []
@@ -44691,6 +44692,14 @@ var CodexClientManager = class {
     }
     return aborted2;
   }
+  cleanupAgent(agentId) {
+    this.agentTokens.delete(agentId);
+    this.agentLocks.delete(agentId);
+    this.activeControllers.delete(agentId);
+  }
+  clearLock(agentId) {
+    this.agentLocks.delete(agentId);
+  }
   async sendToAgent(agent, message, signal) {
     const prev = this.agentLocks.get(agent.id) ?? Promise.resolve();
     const run = prev.then(
@@ -44702,6 +44711,7 @@ var CodexClientManager = class {
       run.catch(() => {
       })
     );
+    this.trackOp(run);
     return run;
   }
   async doSendToAgent(agent, message, signal) {
@@ -44722,6 +44732,9 @@ var CodexClientManager = class {
           model_reasoning_effort: agent.reasoningEffort,
           search: true
         };
+        if (agent.fastMode) {
+          config2.service_tier = "fast";
+        }
         if (this.commsPort !== null) {
           const token = this.generateAgentToken(agent.id);
           config2.mcp_servers = {
@@ -44856,13 +44869,20 @@ var MessageSystem = class {
   }
   readMessages(channel, agentId) {
     const cursor = this.getCursor(channel, agentId);
-    const unread = channel.messages.slice(cursor).filter((m) => m.from !== agentId);
+    const result = [];
+    for (let i = cursor; i < channel.messages.length; i++) {
+      if (channel.messages[i].from !== agentId) result.push(channel.messages[i]);
+    }
     channel.readCursors.set(agentId, channel.messages.length);
-    return unread;
+    return result;
   }
   peekCount(channel, agentId) {
     const cursor = this.getCursor(channel, agentId);
-    return channel.messages.slice(cursor).filter((m) => m.from !== agentId).length;
+    let count = 0;
+    for (let i = cursor; i < channel.messages.length; i++) {
+      if (channel.messages[i].from !== agentId) count++;
+    }
+    return count;
   }
   groupChatPost(teamId, agentId, agentRole, message) {
     const channel = this.getOrCreateChannel(this.teamChats, teamId);
@@ -44884,19 +44904,21 @@ var MessageSystem = class {
     this.notify("dm", toAgentId);
   }
   dmRead(agentId, fromAgentId) {
+    if (fromAgentId) {
+      const key = this.dmKey(agentId, fromAgentId);
+      const channel = this.dms.get(key);
+      if (!channel) return [];
+      const cursor = this.getCursor(channel, agentId);
+      const result = [];
+      for (let i = cursor; i < channel.messages.length; i++) {
+        if (channel.messages[i].from === fromAgentId) result.push(channel.messages[i]);
+      }
+      return result;
+    }
     const allUnread = [];
     for (const [key, channel] of this.dms) {
       if (!this.isDmParticipant(key, agentId)) continue;
-      if (fromAgentId) {
-        const cursor = this.getCursor(channel, agentId);
-        const unread = channel.messages.slice(cursor);
-        const matching = unread.filter((m) => m.from === fromAgentId);
-        if (matching.length > 0) {
-          allUnread.push(...matching);
-        }
-      } else {
-        allUnread.push(...this.readMessages(channel, agentId));
-      }
+      allUnread.push(...this.readMessages(channel, agentId));
     }
     return allUnread.sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime());
   }
@@ -44964,6 +44986,7 @@ var MessageSystem = class {
         this.dms.delete(key);
       }
     }
+    this.leadChat.messages = this.leadChat.messages.filter((m) => !agentSet.has(m.from));
     for (const id of agentIds) {
       this.leadChat.readCursors.delete(id);
     }
@@ -47594,9 +47617,11 @@ function findAgentContext(state, agentId) {
 }
 function registerCommsTools(server, messages, state, boundAgentId) {
   const err = (msg) => ({ isError: true, content: [{ type: "text", text: msg }] });
+  let cachedCtx;
   function resolve() {
     if (!boundAgentId) return null;
-    return findAgentContext(state, boundAgentId);
+    if (cachedCtx === void 0) cachedCtx = findAgentContext(state, boundAgentId);
+    return cachedCtx;
   }
   server.registerTool(
     "group_chat_post",
@@ -47976,458 +48001,9 @@ async function startCommsServer(messages, state, codex) {
   return { httpServer, port };
 }
 
-// src/tools/team.ts
-function registerTeamTools(server, state, messages) {
-  server.registerTool(
-    "create_team",
-    {
-      description: "Create a new team with agents",
-      inputSchema: {
-        name: external_exports.string().describe("Team name"),
-        agents: external_exports.array(
-          external_exports.object({
-            role: external_exports.string().describe("Agent role/name (e.g. architect, frontend-dev, api-dev)"),
-            specialization: external_exports.string().optional().describe(
-              "Agent's area of expertise (e.g. 'React/TypeScript frontend components', 'PostgreSQL database design and optimization')"
-            ),
-            model: external_exports.string().optional().describe("Model (default: gpt-5.4)"),
-            sandbox: external_exports.enum(["read-only", "workspace-write", "danger-full-access"]).optional().describe("Sandbox mode (default: workspace-write)"),
-            baseInstructions: external_exports.string().optional().describe("System instructions for agent"),
-            cwd: external_exports.string().optional().describe("Working directory"),
-            approvalPolicy: external_exports.enum(["untrusted", "on-request", "on-failure", "never"]).optional().describe("Approval policy (default: never)"),
-            isLead: external_exports.boolean().optional().describe("Team lead (xhigh reasoning). Defaults to false (high reasoning)."),
-            reasoningEffort: external_exports.enum(["xhigh", "high", "medium", "low", "minimal"]).optional().describe("Reasoning effort level (default: xhigh for lead, high for workers)")
-          })
-        ).describe("Agent configurations")
-      }
-    },
-    async ({ name, agents: agentConfigs }) => {
-      try {
-        const team = state.createTeam(name, agentConfigs);
-        const agentList = Array.from(team.agents.values()).map((a) => ({
-          id: a.id,
-          role: a.role,
-          specialization: a.specialization,
-          model: a.model,
-          isLead: a.isLead,
-          reasoningEffort: a.reasoningEffort
-        }));
-        return {
-          content: [
-            {
-              type: "text",
-              text: JSON.stringify({ teamId: team.id, name: team.name, agents: agentList }, null, 2)
-            }
-          ]
-        };
-      } catch (error2) {
-        const msg = error2 instanceof Error ? error2.message : String(error2);
-        console.error(`create_team error: ${msg}`);
-        return { isError: true, content: [{ type: "text", text: msg }] };
-      }
-    }
-  );
-  server.registerTool(
-    "dissolve_team",
-    {
-      description: "Dissolve a team and all its agents",
-      inputSchema: {
-        teamId: external_exports.string().describe("Team ID to dissolve")
-      }
-    },
-    async ({ teamId }) => {
-      try {
-        const team = state.getTeam(teamId);
-        if (!team) {
-          return { isError: true, content: [{ type: "text", text: `Team not found: ${teamId}` }] };
-        }
-        if (messages) {
-          const agentIds = Array.from(team.agents.keys());
-          messages.dissolveTeamWithAgents(teamId, agentIds);
-        }
-        state.dissolveTeam(teamId);
-        return { content: [{ type: "text", text: `Team ${teamId} dissolved` }] };
-      } catch (error2) {
-        const msg = error2 instanceof Error ? error2.message : String(error2);
-        console.error(`dissolve_team error: ${msg}`);
-        return { isError: true, content: [{ type: "text", text: msg }] };
-      }
-    }
-  );
-}
-
-// src/tools/agent.ts
-function registerAgentTools(server, state) {
-  server.registerTool(
-    "add_agent",
-    {
-      description: "Add a new agent to an existing team",
-      inputSchema: {
-        teamId: external_exports.string().describe("Team ID"),
-        role: external_exports.string().describe("Agent role/name"),
-        specialization: external_exports.string().optional().describe("Agent's area of expertise"),
-        model: external_exports.string().optional().describe("Model (default: gpt-5.4)"),
-        sandbox: external_exports.enum(["read-only", "workspace-write", "danger-full-access"]).optional().describe("Sandbox mode"),
-        baseInstructions: external_exports.string().optional().describe("System instructions"),
-        cwd: external_exports.string().optional().describe("Working directory"),
-        approvalPolicy: external_exports.enum(["untrusted", "on-request", "on-failure", "never"]).optional().describe("Approval policy"),
-        isLead: external_exports.boolean().optional().describe("Team lead (xhigh reasoning). Defaults to false (high reasoning)."),
-        reasoningEffort: external_exports.enum(["xhigh", "high", "medium", "low", "minimal"]).optional().describe("Reasoning effort level (default: xhigh for lead, high for workers)")
-      }
-    },
-    async ({ teamId, ...config2 }) => {
-      try {
-        const agent = state.addAgent(teamId, config2);
-        return {
-          content: [
-            {
-              type: "text",
-              text: JSON.stringify(
-                {
-                  id: agent.id,
-                  role: agent.role,
-                  specialization: agent.specialization,
-                  model: agent.model,
-                  isLead: agent.isLead,
-                  reasoningEffort: agent.reasoningEffort
-                },
-                null,
-                2
-              )
-            }
-          ]
-        };
-      } catch (error2) {
-        const msg = error2 instanceof Error ? error2.message : String(error2);
-        console.error(`add_agent error: ${msg}`);
-        return { isError: true, content: [{ type: "text", text: msg }] };
-      }
-    }
-  );
-  server.registerTool(
-    "remove_agent",
-    {
-      description: "Remove an agent from a team",
-      inputSchema: {
-        teamId: external_exports.string().describe("Team ID"),
-        agentId: external_exports.string().describe("Agent ID to remove")
-      }
-    },
-    async ({ teamId, agentId }) => {
-      try {
-        const success = state.removeAgent(teamId, agentId);
-        if (!success) {
-          return { isError: true, content: [{ type: "text", text: `Agent not found: ${agentId}` }] };
-        }
-        return { content: [{ type: "text", text: `Agent ${agentId} removed` }] };
-      } catch (error2) {
-        const msg = error2 instanceof Error ? error2.message : String(error2);
-        console.error(`remove_agent error: ${msg}`);
-        return { isError: true, content: [{ type: "text", text: msg }] };
-      }
-    }
-  );
-  server.registerTool(
-    "list_agents",
-    {
-      description: "List all agents in a team with their status",
-      inputSchema: {
-        teamId: external_exports.string().describe("Team ID")
-      }
-    },
-    async ({ teamId }) => {
-      try {
-        const agents = state.listAgents(teamId);
-        const summary = agents.map((a) => ({
-          id: a.id,
-          role: a.role,
-          status: a.status,
-          model: a.model,
-          hasActiveSession: a.threadId !== null,
-          taskCount: a.tasks.length,
-          lastOutput: a.lastOutput
-        }));
-        return {
-          content: [{ type: "text", text: JSON.stringify(summary, null, 2) }]
-        };
-      } catch (error2) {
-        const msg = error2 instanceof Error ? error2.message : String(error2);
-        console.error(`list_agents error: ${msg}`);
-        return { isError: true, content: [{ type: "text", text: msg }] };
-      }
-    }
-  );
-}
-
-// src/tools/communication.ts
-function registerCommunicationTools(server, state, codex) {
-  server.registerTool(
-    "send_message",
-    {
-      description: "Send a message to an agent and get their response",
-      inputSchema: {
-        teamId: external_exports.string().describe("Team ID"),
-        agentId: external_exports.string().describe("Agent ID"),
-        message: external_exports.string().describe("Message to send")
-      }
-    },
-    async ({ teamId, agentId, message }) => {
-      try {
-        const agent = state.getAgent(teamId, agentId);
-        if (!agent) {
-          return { isError: true, content: [{ type: "text", text: `Agent not found: ${agentId}` }] };
-        }
-        if (agent.status === "working") {
-          return {
-            isError: true,
-            content: [
-              {
-                type: "text",
-                text: `Agent ${agentId} is currently working. Wait for it to finish.`
-              }
-            ]
-          };
-        }
-        const output = await codex.sendToAgent(agent, message);
-        return { content: [{ type: "text", text: output }] };
-      } catch (error2) {
-        const msg = error2 instanceof Error ? error2.message : String(error2);
-        console.error(`send_message error: ${msg}`);
-        return { isError: true, content: [{ type: "text", text: msg }] };
-      }
-    }
-  );
-  server.registerTool(
-    "broadcast",
-    {
-      description: "Broadcast a message to all (or a subset of) agents in parallel",
-      inputSchema: {
-        teamId: external_exports.string().describe("Team ID"),
-        message: external_exports.string().describe("Message to broadcast"),
-        agentIds: external_exports.array(external_exports.string()).optional().describe("Subset of agent IDs (default: all)")
-      }
-    },
-    async ({ teamId, message, agentIds }) => {
-      try {
-        const team = state.getTeam(teamId);
-        if (!team) {
-          return { isError: true, content: [{ type: "text", text: `Team not found: ${teamId}` }] };
-        }
-        const targets = agentIds ? agentIds.map((id) => team.agents.get(id)).filter(Boolean) : Array.from(team.agents.values());
-        const available = targets.filter((a) => a.status !== "working");
-        const results = await Promise.allSettled(
-          available.map(async (agent) => {
-            const output = await codex.sendToAgent(agent, message);
-            return { agentId: agent.id, role: agent.role, status: "success", output };
-          })
-        );
-        const summary = results.map((r, i) => {
-          if (r.status === "fulfilled") return r.value;
-          return {
-            agentId: available[i].id,
-            role: available[i].role,
-            status: "error",
-            error: r.reason instanceof Error ? r.reason.message : String(r.reason)
-          };
-        });
-        return { content: [{ type: "text", text: JSON.stringify(summary, null, 2) }] };
-      } catch (error2) {
-        const msg = error2 instanceof Error ? error2.message : String(error2);
-        console.error(`broadcast error: ${msg}`);
-        return { isError: true, content: [{ type: "text", text: msg }] };
-      }
-    }
-  );
-}
-
-// src/tools/task.ts
-function registerTaskTools(server, state, codex) {
-  server.registerTool(
-    "assign_task",
-    {
-      description: "Assign a task to an agent. Auto-starts if no pending dependencies.",
-      inputSchema: {
-        teamId: external_exports.string().describe("Team ID"),
-        agentId: external_exports.string().describe("Agent ID to assign task to"),
-        description: external_exports.string().describe("Task description"),
-        dependencies: external_exports.array(external_exports.string()).optional().describe("Task IDs that must complete before this task starts")
-      }
-    },
-    async ({ teamId, agentId, description, dependencies }) => {
-      try {
-        const task = state.createTask(teamId, agentId, description, dependencies);
-        const hasUnmetDeps = dependencies && dependencies.length > 0 && dependencies.some((depId) => {
-          const team = state.getTeam(teamId);
-          const dep = team.tasks.get(depId);
-          return !dep || dep.status !== "completed";
-        });
-        if (!hasUnmetDeps) {
-          const agent = state.getAgent(teamId, agentId);
-          if (agent && agent.status !== "working") {
-            task.status = "in-progress";
-            try {
-              await codex.sendToAgent(agent, description);
-            } catch {
-              task.status = "pending";
-            }
-          }
-        }
-        return {
-          content: [
-            {
-              type: "text",
-              text: JSON.stringify(
-                {
-                  taskId: task.id,
-                  assignedTo: task.assignedTo,
-                  status: task.status,
-                  hasPendingDependencies: !!hasUnmetDeps
-                },
-                null,
-                2
-              )
-            }
-          ]
-        };
-      } catch (error2) {
-        const msg = error2 instanceof Error ? error2.message : String(error2);
-        console.error(`assign_task error: ${msg}`);
-        return { isError: true, content: [{ type: "text", text: msg }] };
-      }
-    }
-  );
-  server.registerTool(
-    "task_status",
-    {
-      description: "Get status of all tasks in a team",
-      inputSchema: {
-        teamId: external_exports.string().describe("Team ID")
-      }
-    },
-    async ({ teamId }) => {
-      try {
-        const tasks = state.listTasks(teamId);
-        const summary = tasks.map((t) => ({
-          id: t.id,
-          description: t.description,
-          status: t.status,
-          assignedTo: t.assignedTo,
-          dependencies: t.dependencies,
-          result: t.result ?? void 0,
-          createdAt: t.createdAt.toISOString(),
-          completedAt: t.completedAt?.toISOString()
-        }));
-        return { content: [{ type: "text", text: JSON.stringify(summary, null, 2) }] };
-      } catch (error2) {
-        const msg = error2 instanceof Error ? error2.message : String(error2);
-        console.error(`task_status error: ${msg}`);
-        return { isError: true, content: [{ type: "text", text: msg }] };
-      }
-    }
-  );
-  server.registerTool(
-    "complete_task",
-    {
-      description: "Mark a task as completed. Auto-triggers any dependent tasks that become unblocked.",
-      inputSchema: {
-        teamId: external_exports.string().describe("Team ID"),
-        taskId: external_exports.string().describe("Task ID to complete"),
-        result: external_exports.string().optional().describe("Task result (defaults to agent's last output)")
-      }
-    },
-    async ({ teamId, taskId, result }) => {
-      try {
-        const team = state.getTeam(teamId);
-        if (!team) {
-          return { isError: true, content: [{ type: "text", text: `Team not found: ${teamId}` }] };
-        }
-        const task = team.tasks.get(taskId);
-        if (!task) {
-          return { isError: true, content: [{ type: "text", text: `Task not found: ${taskId}` }] };
-        }
-        const taskResult = result ?? state.getAgent(teamId, task.assignedTo)?.lastOutput ?? "";
-        const unblockedIds = state.completeTask(teamId, taskId, taskResult);
-        const triggeredTasks = [];
-        for (const unblockedId of unblockedIds) {
-          const unblockedTask = team.tasks.get(unblockedId);
-          if (!unblockedTask) continue;
-          const agent = state.getAgent(teamId, unblockedTask.assignedTo);
-          if (agent && agent.status !== "working") {
-            unblockedTask.status = "in-progress";
-            triggeredTasks.push({
-              taskId: unblockedId,
-              agentId: agent.id,
-              description: unblockedTask.description
-            });
-            const op = codex.sendToAgent(agent, unblockedTask.description).catch((err) => {
-              console.error(`Failed to trigger unblocked task ${unblockedId}: ${err}`);
-              unblockedTask.status = "pending";
-            });
-            codex.trackOp(op);
-          }
-        }
-        return {
-          content: [
-            {
-              type: "text",
-              text: JSON.stringify(
-                {
-                  completed: taskId,
-                  result: taskResult,
-                  triggeredTasks
-                },
-                null,
-                2
-              )
-            }
-          ]
-        };
-      } catch (error2) {
-        const msg = error2 instanceof Error ? error2.message : String(error2);
-        console.error(`complete_task error: ${msg}`);
-        return { isError: true, content: [{ type: "text", text: msg }] };
-      }
-    }
-  );
-}
-
-// src/tools/results.ts
-function registerResultTools(server, state) {
-  server.registerTool(
-    "get_output",
-    {
-      description: "Get an agent's last output, status, and role",
-      inputSchema: {
-        teamId: external_exports.string().describe("Team ID"),
-        agentId: external_exports.string().describe("Agent ID")
-      }
-    },
-    async ({ teamId, agentId }) => {
-      try {
-        const agent = state.getAgent(teamId, agentId);
-        if (!agent) {
-          return { isError: true, content: [{ type: "text", text: `Agent not found: ${agentId}` }] };
-        }
-        return {
-          content: [
-            {
-              type: "text",
-              text: JSON.stringify(
-                { agentId: agent.id, role: agent.role, status: agent.status, output: agent.lastOutput },
-                null,
-                2
-              )
-            }
-          ]
-        };
-      } catch (error2) {
-        const msg = error2 instanceof Error ? error2.message : String(error2);
-        console.error(`get_output error: ${msg}`);
-        return { isError: true, content: [{ type: "text", text: msg }] };
-      }
-    }
-  );
-}
+// src/tools/mission.ts
+var import_node_crypto5 = __toESM(require("node:crypto"), 1);
+var import_node_child_process = require("node:child_process");
 
 // src/tool-utils.ts
 function toolError(msg) {
@@ -48463,80 +48039,7 @@ function withTimeout(fn, ms, label) {
   });
 }
 
-// src/tools/dispatch.ts
-function registerDispatchTools(server, state, codex, messages) {
-  server.registerTool(
-    "dispatch_team",
-    {
-      description: "Create a team, dispatch tasks to all agents in parallel, collect results, dissolve team. Fire-and-forget parallel execution.",
-      inputSchema: {
-        name: external_exports.string().describe("Team name"),
-        workDir: external_exports.string().describe("Working directory for all agents"),
-        agents: external_exports.array(
-          external_exports.object({
-            role: external_exports.string().describe("Agent role"),
-            specialization: external_exports.string().optional().describe("Agent specialization"),
-            isLead: external_exports.boolean().optional().describe("Is this the team lead?"),
-            task: external_exports.string().describe("Task for this agent to execute"),
-            sandbox: external_exports.enum(["read-only", "workspace-write", "danger-full-access"]).optional().describe("Sandbox mode"),
-            reasoningEffort: external_exports.enum(["xhigh", "high", "medium", "low", "minimal"]).optional().describe("Reasoning effort level (default: xhigh for lead, high for workers)")
-          })
-        ).describe("Agent configs with their tasks")
-      }
-    },
-    async ({ name, workDir, agents: agentConfigs }) => {
-      let team;
-      try {
-        team = state.createTeam(
-          name,
-          agentConfigs.map((a) => ({
-            role: a.role,
-            specialization: a.specialization,
-            isLead: a.isLead,
-            sandbox: a.sandbox,
-            reasoningEffort: a.reasoningEffort,
-            cwd: workDir
-          }))
-        );
-        const agentList = Array.from(team.agents.values());
-        const tasks = agentConfigs.map((ac) => ac.task);
-        const results = await Promise.allSettled(
-          agentList.map(
-            (agent, i) => withTimeout((signal) => codex.sendToAgent(agent, tasks[i], signal), WORKER_TIMEOUT_MS, `Agent ${agent.id}`)
-          )
-        );
-        const report = agentList.map((agent, i) => {
-          const r = results[i];
-          return {
-            agentId: agent.id,
-            role: agent.role,
-            status: r.status === "fulfilled" ? "success" : "error",
-            output: r.status === "fulfilled" ? r.value : r.reason instanceof Error ? r.reason.message : String(r.reason)
-          };
-        });
-        return {
-          content: [
-            { type: "text", text: JSON.stringify({ teamName: name, results: report }, null, 2) }
-          ]
-        };
-      } catch (error2) {
-        const msg = error2 instanceof Error ? error2.message : String(error2);
-        console.error(`dispatch_team error: ${msg}`);
-        return { isError: true, content: [{ type: "text", text: msg }] };
-      } finally {
-        if (team) {
-          const agentIds = Array.from(team.agents.values()).map((a) => a.id);
-          messages.dissolveTeamWithAgents(team.id, agentIds);
-          state.dissolveTeam(team.id);
-        }
-      }
-    }
-  );
-}
-
 // src/tools/mission.ts
-var import_node_crypto5 = __toESM(require("node:crypto"), 1);
-var import_node_child_process = require("node:child_process");
 var missions = /* @__PURE__ */ new Map();
 function buildLeadPrompt(mission, team, workers, lead) {
   const workerList = workers.map((w) => `  - @${w.id} (${w.role}${w.specialization ? " \u2014 " + w.specialization : ""})`).join("\n");
@@ -48587,50 +48090,18 @@ exploring the codebase immediately. Your job: align the team fast, then execute 
 Your agent ID: ${lead.id}
 Team ID: ${team.id}`;
 }
-function buildWorkerPrompt(mission, team, worker, lead, allWorkers) {
-  const teammateList = allWorkers.filter((w) => w.id !== worker.id).map((w) => `  - @${w.id} (${w.role}${w.specialization ? " \u2014 " + w.specialization : ""})`).join("\n");
-  return `=== YOUR ROLE ===
-You are ${worker.id} (${worker.role}${worker.specialization ? " \u2014 " + worker.specialization : ""}).
-
-=== MISSION OBJECTIVE ===
+function buildWorkerPrompt(mission, team, worker) {
+  return `=== MISSION OBJECTIVE ===
 ${mission.objective}
 
-=== YOUR TEAM ===
-Lead: @${lead.id} (${lead.role})
-Teammates:
-${teammateList || "  (none \u2014 you are the only worker)"}
-
-=== WHAT TO DO RIGHT NOW ===
-
-1. BOOTSTRAP
-   Call group_chat_read() immediately.
-   - Plan is there \u2192 read your assignment and begin execution.
-   - No plan yet \u2192 start exploring the codebase relevant to the objective. Build context
-     for what you'll likely need to do (read key files, understand existing patterns).
-     After initial exploration, call wait_for_messages(15000) to catch the plan.
-   - Plan arrives \u2192 read group_chat, find your assignment, and execute.
-   If the plan has a material issue with your scope, raise it with specifics in group_chat.
-   If it looks right, execute \u2014 do not post just to agree.
-
-2. EXECUTE YOUR SCOPE
-   Own your piece. Make decisions within your scope (naming, structure, approach details)
-   without asking permission \u2014 document them in share(). Only escalate decisions that cross
-   your scope boundary: shared interfaces, data formats, or choices that affect another
-   agent's work.
-   Persist until your work is fully complete. If something fails, diagnose and fix it.
-   If an approach fails after two attempts, try an alternative.
-
-3. DELIVER AND VERIFY
-   When your work is complete:
-   (a) Verify it works \u2014 run relevant tests if available.
-   (b) share() your deliverable: what you built, key decisions, integration points, gotchas.
-   (c) Check get_shared() \u2014 does your work integrate with what teammates shared?
-   (d) Post to group_chat: "Done with [scope]. [One sentence summary + any gotchas.]"
-   (e) If teammates are still working, check if anyone is blocked on you or needs help.
-
-Stay responsive: check messages between milestones (after completing a file, after tests).
-Use wait_for_messages() when idle between work chunks. Answer teammate questions directly \u2014
-don't wait for the lead. Full communication guidelines are in your base instructions.
+=== BOOTSTRAP ===
+Call group_chat_read() immediately.
+- Plan is there \u2192 read your assignment and begin execution.
+- No plan yet \u2192 start exploring the codebase relevant to the objective. Build context
+  for what you'll likely need to do. After initial exploration, call wait_for_messages(15000) to catch the plan.
+- Plan arrives \u2192 read group_chat, find your assignment, and execute.
+If the plan has a material issue with your scope, raise it with specifics in group_chat.
+If it looks right, execute \u2014 do not post just to agree.
 
 Your agent ID: ${worker.id}
 Team ID: ${team.id}`;
@@ -48673,7 +48144,7 @@ async function runMission(mission, team, codex, state, messages) {
       `Lead ${lead.id}`
     );
     const workerPromises = workers.map((worker) => {
-      const workerPrompt = buildWorkerPrompt(mission, team, worker, lead, workers);
+      const workerPrompt = buildWorkerPrompt(mission, team, worker);
       return withTimeout((signal) => codex.sendToAgent(worker, workerPrompt, signal), WORKER_TIMEOUT_MS, `Worker ${worker.id}`).then((output) => ({
         agentId: worker.id,
         role: worker.role,
@@ -48713,21 +48184,22 @@ async function runMission(mission, team, codex, state, messages) {
             console.error(`Failed to parse fix assignments: ${e}`);
           }
           fixAssignments = fixAssignments.filter((a) => mission.workerIds.includes(a.agentId));
-          if (fixAssignments.length > 0) {
-            const fixResults = await Promise.allSettled(
-              fixAssignments.map(({ agentId, task }) => {
-                const worker = team.agents.get(agentId);
-                if (!worker) return Promise.reject(new Error(`Agent not found: ${agentId}`));
-                return codex.sendToAgent(worker, task);
-              })
-            );
-            for (let i = 0; i < fixAssignments.length; i++) {
-              const r = fixResults[i];
-              const existing = mission.workerResults.find((wr) => wr.agentId === fixAssignments[i].agentId);
-              if (existing) {
-                existing.status = r.status === "fulfilled" ? "success" : "error";
-                existing.output = r.status === "fulfilled" ? r.value : r.reason instanceof Error ? r.reason.message : String(r.reason);
-              }
+          if (fixAssignments.length === 0) {
+            break;
+          }
+          const fixResults = await Promise.allSettled(
+            fixAssignments.map(({ agentId, task }) => {
+              const worker = team.agents.get(agentId);
+              if (!worker) return Promise.reject(new Error(`Agent not found: ${agentId}`));
+              return codex.sendToAgent(worker, task);
+            })
+          );
+          for (let i = 0; i < fixAssignments.length; i++) {
+            const r = fixResults[i];
+            const existing = mission.workerResults.find((wr) => wr.agentId === fixAssignments[i].agentId);
+            if (existing) {
+              existing.status = r.status === "fulfilled" ? "success" : "error";
+              existing.output = r.status === "fulfilled" ? r.value : r.reason instanceof Error ? r.reason.message : String(r.reason);
             }
           }
           mission.phase = "verifying";
@@ -48747,6 +48219,7 @@ async function runMission(mission, team, codex, state, messages) {
       sharedArtifacts: messages.getSharedArtifacts(mission.teamId)
     };
     messages.dissolveTeamWithAgents(mission.teamId, agentIds);
+    for (const id of agentIds) codex.cleanupAgent(id);
     state.dissolveTeam(mission.teamId);
     setTimeout(() => missions.delete(mission.id), 30 * 60 * 1e3).unref();
   }
@@ -48778,7 +48251,8 @@ function registerMissionTools(server, state, codex, messages) {
             specialization: external_exports.string().optional().describe("Agent specialization"),
             isLead: external_exports.boolean().optional().describe("Is this the team lead? Exactly one must be true."),
             sandbox: external_exports.enum(["read-only", "workspace-write", "danger-full-access"]).optional().describe("Sandbox mode"),
-            reasoningEffort: external_exports.enum(["xhigh", "high", "medium", "low", "minimal"]).optional().describe("Reasoning effort level (default: xhigh for lead, high for workers)")
+            reasoningEffort: external_exports.enum(["xhigh", "high", "medium", "low", "minimal"]).optional().describe("Reasoning effort level (default: xhigh for lead, high for workers)"),
+            fastMode: external_exports.boolean().optional().describe("Enable fast output mode (service_tier=fast)")
           })
         ).describe("Team composition"),
         verifyCommand: external_exports.string().optional().describe(
@@ -48809,6 +48283,7 @@ function registerMissionTools(server, state, codex, messages) {
             isLead: t.isLead,
             sandbox: t.sandbox,
             reasoningEffort: t.reasoningEffort,
+            fastMode: t.fastMode,
             cwd: workDir
           }))
         );
@@ -49082,6 +48557,9 @@ function registerSteerTools(server, state, codex, messages) {
       }
       const targetIds = targets.map((a) => a.id);
       const aborted2 = codex.abortTeam(targetIds);
+      for (const id of aborted2) {
+        codex.clearLock(id);
+      }
       messages.groupChatPost(
         teamId,
         "orchestrator",
@@ -49114,48 +48592,74 @@ ${directive}`
 // src/server.ts
 var ORCHESTRATOR_GUIDE = `# codex-teams Orchestrator Guide
 
-## When to Use What
+You are orchestrating a team of autonomous coding agents. The quality of their output is
+directly proportional to the quality of your instructions. These agents are capable engineers,
+but they can only work with what you give them. Vague objectives produce vague results.
+Precise, well-structured missions produce exceptional work.
 
-### Mission (launch_mission + await_mission)
-Use for: coordinated work requiring communication between agents.
-- Best for: feature implementation, refactoring, bug investigation, code review
-- Agents communicate via group chat, DMs, and shared artifacts
-- Lead coordinates, workers execute autonomously
-- Optional verification command (e.g. "npm test") with auto-retry
-- Returns: worker outputs, lead output, shared artifacts, chat history
+## Writing Great Objectives
 
-### Dispatch (dispatch_team)
-Use for: parallel independent tasks with no inter-agent communication needed.
-- Best for: batch operations, independent file processing, parallel searches
-- All agents run simultaneously with separate tasks
-- No group chat or coordination \u2014 each agent works in isolation
-- Simpler and faster when tasks don't overlap
-- Returns: per-agent results
+The objective is the single most important input to a mission. Every word matters.
 
-### Manual (create_team + send_message + assign_task)
-Use for: fine-grained control where you direct each step.
-- Best for: exploratory work, debugging, iterative refinement
-- You manage the conversation flow directly
+**Be specific about the problem.** Don't say "fix the auth bug" \u2014 say "the login endpoint
+at src/api/auth.ts returns 500 when the email contains a + character. The issue is likely
+in the email validation regex on line 42. Fix the regex and add test cases for special
+characters in emails."
+
+**Define what done looks like.** Include acceptance criteria so agents know when they've
+succeeded. "The /api/users endpoint should return paginated results with limit/offset
+query params, default limit 20, max 100. Response shape: { data: User[], total: number,
+limit: number, offset: number }."
+
+**Point to the right files.** Agents can explore the codebase, but starting them in the
+right place saves time and avoids wrong turns. Reference specific files, directories,
+and existing patterns they should follow.
+
+**State constraints explicitly.** If there are things agents should NOT do \u2014 don't touch
+the database schema, don't modify the public API, keep backward compatibility \u2014 say so.
+Unstated constraints become surprised reviewers.
+
+**Separate concerns for workers.** When you define team roles, give each worker a distinct,
+non-overlapping scope. "You own the API layer" and "you own the frontend components" is
+clear. "Help with the feature" is not. The lead will coordinate, but clean boundaries
+prevent agents from stepping on each other's work.
+
+**Research missions need structure too.** Not every mission writes code \u2014 sometimes you need
+agents to investigate, audit, or map out a codebase. These benefit just as much from
+precision. Don't say "look into our error handling" \u2014 say "Audit every try/catch block
+in src/api/ and src/services/. For each one, document: what errors it catches, whether it
+logs them, whether it returns a meaningful error to the caller, and whether it swallows
+errors silently. Produce a shared artifact with a table of findings and flag the worst
+offenders. The goal is a prioritized list of error handling improvements, not fixes."
+For research, tell agents what to look for, where to look, what format you want the
+findings in, and what questions you need answered. A team that knows it's producing a
+report with specific columns will deliver something actionable. A team told to "explore"
+will wander.
+
+The less you leave to assumption, the better the result. A well-written 10-line objective
+will outperform a hastily written 2-line one every time.
 
 ## Team Sizing
-- 1 lead + 1-3 workers is the sweet spot for missions
+- 1 lead + 1-3 workers is the sweet spot
 - More workers = more coordination overhead, diminishing returns
 - Match worker count to genuinely parallelizable work streams
 - Each worker should own a distinct scope with clear boundaries
 
-## Mission Workflow
+## Workflow
 1. Call launch_mission with objective, team composition, and optional verifyCommand
 2. Mission returns immediately with missionId
 3. Check progress with mission_status (includes recent chat and artifact count during execution)
 4. Block on completion with await_mission, or poll mission_status
 5. Results include: leadOutput, workerResults, sharedArtifacts, verificationLog
 6. For full chat history: use get_mission_comms (available 30 min after completion)
+7. Use get_team_comms with teamId for live communication during execution
+8. Use steer_team to redirect agents mid-mission if they go off track
 
 ## Tips
-- Write clear objectives: what to build/fix, acceptance criteria, relevant file paths
 - Set verifyCommand to "npm test" or equivalent for automatic quality gates
-- The lead's group_chat posts and shared artifacts ARE the deliverable \u2014 no separate compilation step
+- The lead's group_chat posts and shared artifacts ARE the deliverable
 - Use mission_status during execution to monitor progress without blocking
+- If a mission goes sideways, steer_team lets you course-correct without starting over
 `;
 function createServer(state, codex, messages) {
   const server = new McpServer({
@@ -49165,13 +48669,7 @@ function createServer(state, codex, messages) {
   server.registerResource("guide", "codex-teams://guide", { description: "Orchestrator guide for codex-teams" }, async () => ({
     contents: [{ uri: "codex-teams://guide", text: ORCHESTRATOR_GUIDE, mimeType: "text/markdown" }]
   }));
-  registerTeamTools(server, state, messages);
-  registerAgentTools(server, state);
-  registerCommunicationTools(server, state, codex);
-  registerTaskTools(server, state, codex);
-  registerResultTools(server, state);
   if (messages) {
-    registerDispatchTools(server, state, codex, messages);
     registerMissionTools(server, state, codex, messages);
     registerSteerTools(server, state, codex, messages);
   }
