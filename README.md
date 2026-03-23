@@ -138,27 +138,39 @@ Agents use sensible defaults. Override per-agent when launching a mission:
 ## Architecture
 
 ```mermaid
-graph TD
-    U["You (Claude Code)"] --> CT["codex-teams<br/><i>MCP Server (stdio)</i>"]
-    CT --> C["Codex CLI<br/><i>MCP Client (stdio)</i>"]
+graph LR
+    U["🧑‍💻 You<br/><sub>Claude Code / MCP Client</sub>"]
 
-    subgraph "Mission Team"
-      L["Lead"]
-      W1["Worker A"]
-      W2["Worker B"]
-      L -.->|"group chat"| W1
-      L -.->|"group chat"| W2
-      W1 -.->|"DMs & artifacts"| W2
+    U -->|"launch_mission"| CT["⚙️ codex-teams<br/><sub>MCP Server · stdio</sub>"]
+    U -.->|"mission_status<br/>await_mission<br/>steer_team"| CT
+
+    CT -->|"spawns agents via"| CX["🔧 Codex CLI<br/><sub>MCP Client · stdio</sub>"]
+
+    CX --> L
+    CX --> W1
+    CX --> W2
+
+    subgraph team ["🚀 Mission Team"]
+        direction TB
+        L["👑 Lead<br/><sub>plans · coordinates · reviews</sub>"]
+        W1["🔨 Worker A<br/><sub>owns scope A</sub>"]
+        W2["🔨 Worker B<br/><sub>owns scope B</sub>"]
     end
 
-    C -->|spawns| L
-    C -->|spawns| W1
-    C -->|spawns| W2
+    COMMS["💬 Comms Server<br/><sub>HTTP · localhost · per-agent auth</sub>"]
 
-    COMMS["Comms Server<br/><i>HTTP (localhost)</i>"]
-    L --- COMMS
-    W1 --- COMMS
-    W2 --- COMMS
+    L <-->|"group chat · DMs · artifacts"| COMMS
+    W1 <-->|"group chat · DMs · artifacts"| COMMS
+    W2 <-->|"group chat · DMs · artifacts"| COMMS
+
+    style team fill:#1a1a2e,stroke:#16213e,stroke-width:2px,color:#e0e0e0
+    style CT fill:#0d1117,stroke:#58a6ff,stroke-width:2px,color:#e0e0e0
+    style CX fill:#0d1117,stroke:#58a6ff,stroke-width:2px,color:#e0e0e0
+    style COMMS fill:#161b22,stroke:#f78166,stroke-width:2px,color:#e0e0e0
+    style U fill:#161b22,stroke:#7ee787,stroke-width:2px,color:#e0e0e0
+    style L fill:#1c2333,stroke:#d2a8ff,stroke-width:1px,color:#e0e0e0
+    style W1 fill:#1c2333,stroke:#79c0ff,stroke-width:1px,color:#e0e0e0
+    style W2 fill:#1c2333,stroke:#79c0ff,stroke-width:1px,color:#e0e0e0
 ```
 
 Three layers run simultaneously:
