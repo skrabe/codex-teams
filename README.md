@@ -193,14 +193,18 @@ codex-teams launch \
 
 ---
 
-## Team Sizing
+## Team Sizing & Cost
 
-| Team | Best for |
-|---|---|
-| 1 lead + 1 worker | Simple tasks, one work stream |
-| 1 lead + 2 workers | Most common — two parallel scopes (e.g., API + frontend) |
-| 1 lead + 3 workers | Complex features — three distinct scopes (e.g., API + UI + tests) |
-| 1 lead + 4+ workers | Rarely worth it — coordination overhead grows fast |
+Every agent is a full Codex CLI session making LLM API calls. Cost scales linearly with the number of agents and is further multiplied by reasoning level. A 1+2 team at `high` reasoning is roughly 3x a single agent; bump the lead to `xhigh` and add a fourth worker and you're at 5x+. Multiple teams multiply this again — a two-team mission with 3 agents each is 6 concurrent LLM sessions.
+
+| Team | Best for | Relative cost |
+|---|---|---|
+| 1 lead + 1 worker | Simple tasks, one work stream | ~2x single agent |
+| 1 lead + 2 workers | Most common — two parallel scopes (e.g., API + frontend) | ~3x |
+| 1 lead + 3 workers | Complex features — three distinct scopes (e.g., API + UI + tests) | ~4x |
+| 1 lead + 4+ workers | Rarely worth it — coordination overhead grows fast | 5x+ |
+
+Use `--reasoning` to control cost per agent: `xhigh` is the most expensive, `minimal` is cheapest. The default is `xhigh` for the lead and `high` for workers. For exploratory or low-stakes work, dropping workers to `medium` cuts cost significantly. Use `--fast` for even cheaper but shallower output.
 
 ---
 
@@ -220,21 +224,21 @@ codex-teams launch --objective "Add auth with tests" --lead "Lead" --worker "Bac
 
 ### Architecture
 
-```
-┌─────────────────┐
-│  codex-teams    │  CLI — parses args, orchestrates mission
-│  (your terminal)│
-└────────┬────────┘
-         │ spawns via codex mcp-server
-         ▼
-┌─────────────────┐     ┌─────────────────┐
-│   👑 Lead       │◄───►│  💬 Comms Server │◄───► 🔨 Worker A
-│                 │     │  (localhost HTTP) │◄───► 🔨 Worker B
-└─────────────────┘     └─────────────────┘
-                         group chat · DMs · artifacts
+```mermaid
+graph TD
+    CLI["codex-teams CLI<br/>(your terminal)"]
+    CLI -->|spawns via codex mcp-server| Lead["Lead"]
+    CLI -->|spawns via codex mcp-server| WA["Worker A"]
+    CLI -->|spawns via codex mcp-server| WB["Worker B"]
+    Comms["Comms Server<br/>(localhost HTTP)<br/>group chat · DMs · artifacts"]
+    Lead <-->|MCP| Comms
+    WA <-->|MCP| Comms
+    WB <-->|MCP| Comms
 ```
 
 Each agent runs as a Codex CLI thread with its own context window. The comms server provides authenticated group chat, direct messages, shared artifacts, and a wait-for-messages mechanism.
+
+Multiple teams are supported via `--team-json` — you can define separate teams each with their own lead and workers. However, every agent is a full Codex CLI session making LLM API calls, so costs scale directly with team size.
 
 ---
 

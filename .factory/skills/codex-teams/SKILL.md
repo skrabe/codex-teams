@@ -99,6 +99,25 @@ detailed engineering ticket, not a casual request. Include:
 
 Then run the command and report results back to the user.
 
+## Architecture
+
+```mermaid
+graph TD
+    CLI["codex-teams CLI<br/>(your terminal)"]
+    CLI -->|spawns via codex mcp-server| Lead["Lead"]
+    CLI -->|spawns via codex mcp-server| WA["Worker A"]
+    CLI -->|spawns via codex mcp-server| WB["Worker B"]
+    Comms["Comms Server<br/>(localhost HTTP)<br/>group chat · DMs · artifacts"]
+    Lead <-->|MCP| Comms
+    WA <-->|MCP| Comms
+    WB <-->|MCP| Comms
+```
+
+Each agent runs as a Codex CLI thread with its own context window. The comms server provides
+group chat, DMs, shared artifacts, and wait-for-messages. Multiple teams are supported via
+`--team-json` — each team gets its own lead and workers, but every agent is a full Codex CLI
+session, so costs scale directly with total agent count.
+
 ## Command reference
 
 ### launch — Run a mission (blocks until complete)
@@ -223,15 +242,27 @@ error to the caller, (4) whether it swallows errors silently. Produce a shared a
 with a table of findings and flag the worst offenders. The goal is a prioritized list of
 error handling improvements, not code fixes."
 
-## Team sizing guidelines
+## Team sizing and cost
 
-- **1 lead + 1 worker**: Simple tasks with one work stream
-- **1 lead + 2 workers**: Most common. Two parallel work streams (e.g., API + frontend)
-- **1 lead + 3 workers**: Complex features with three distinct scopes (e.g., API + UI + tests)
-- **1 lead + 4+ workers**: Rarely worth it. Coordination overhead increases sharply.
+Every agent is a full Codex CLI session making LLM API calls. Cost scales linearly with team
+size and is further multiplied by reasoning level. A 1+2 team at `high` reasoning is roughly
+3x a single agent; bump the lead to `xhigh` and add a fourth worker and you're at 5x+.
+Multiple teams (via `--team-json`) multiply this again — a two-team mission with 3 agents
+each is 6 concurrent LLM sessions.
+
+- **1 lead + 1 worker**: Simple tasks, one work stream (~2x single agent cost)
+- **1 lead + 2 workers**: Most common. Two parallel work streams (~3x)
+- **1 lead + 3 workers**: Complex features, three distinct scopes (~4x)
+- **1 lead + 4+ workers**: Rarely worth it. Coordination overhead increases sharply. (5x+)
 
 Match worker count to genuinely parallelizable work streams. Don't add workers just because
 the task is big — add them because the work can actually be done in parallel.
+
+Use `--reasoning` to control cost per agent: `xhigh` is the most expensive, `minimal` is
+cheapest. Default is `xhigh` for the lead, `high` for workers. For exploratory or low-stakes
+work, dropping workers to `medium` cuts cost significantly. Use `--fast` for cheaper but
+shallower output. When proposing a team to the user, always mention the cost implications
+of the team size and reasoning levels you're suggesting.
 
 ## Advanced: --team-json for full control
 
