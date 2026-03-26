@@ -12,7 +12,7 @@
   ],
   "scripts": {
     "build": "tsc",
-    "bundle": "esbuild src/index.ts --bundle --platform=node --target=node18 --format=cjs --minify --outfile=dist/index.cjs",
+    "bundle": "esbuild src/index.ts --bundle --platform=node --target=node18 --format=cjs --minify --loader:.md=text --outfile=dist/index.cjs",
     "prepublishOnly": "npm run bundle",
     "dev": "tsc --watch",
     "test": "node --import tsx --test tests/*.test.ts"
