@@ -4,189 +4,261 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Node.js](https://img.shields.io/badge/node-18%2B-brightgreen)](https://nodejs.org)
 
-An MCP server that turns Claude Code into a team lead. Describe what you want built, researched, or planned — codex-teams spins up a coordinated team of [Codex CLI](https://github.com/openai/codex) agents that investigate in parallel, share findings in real time, and deliver results you can act on.
+A CLI that orchestrates teams of [Codex CLI](https://github.com/openai/codex) agents. Describe what you want built, researched, or planned — codex-teams spins up a lead + workers that communicate in real time, share discoveries, and deliver results.
 
 ---
 
-## Why
+## Install
 
-Claude Code is powerful, but it's one agent with one pair of eyes. Large codebases, multi-repo architectures, and cross-cutting concerns need more than a single thread of investigation. codex-teams gives you a team.
+```bash
+npm install -g codex-teams
+```
 
-- **Deep research, fast.** Send workers to explore different parts of a codebase simultaneously — one traces the data flow, another maps the API surface, a third reads the tests. They share what they find as they go, building a complete picture no single agent could assemble alone
-- **Plans that actually hold up.** When agents research together before proposing changes, the plan accounts for things a solo agent would miss — that service B depends on the response shape you're about to change, that there's a legacy migration script nobody remembers, that the test suite already covers the edge case you were worried about
-- **Implementation with context.** Once the team has mapped the terrain, the lead can assign targeted work to each worker — and they already have the context from the research phase. No re-reading, no missed connections
-- **Verification built in.** An optional command (like `npm test`) runs automatically after the work is done. If something breaks, the team fixes it before reporting back
-- You launch a mission and go do other things. Check in when you're ready
+Then install the skill for your AI coding tools:
+
+```bash
+codex-teams setup
+```
+
+This auto-detects [Claude Code](https://code.claude.com), [Codex CLI](https://github.com/openai/codex), [OpenCode](https://opencode.ai), and [Factory Droid](https://factory.ai) and installs the codex-teams skill so your AI assistant knows how to use it automatically.
+
+### Prerequisites
+
+- [Codex CLI](https://github.com/openai/codex) installed and on `PATH` (`npm install -g @openai/codex`)
+- Node.js 18+
 
 ---
 
 ## Quick Start
 
-### Prerequisites
-
-- [Claude Code](https://docs.anthropic.com/en/docs/claude-code) or any MCP-compatible client
-- [Codex CLI](https://github.com/openai/codex) installed and on `PATH`
-- Node.js 18+
-
-### Install
-
-**Claude Code**
-
 ```bash
-claude mcp add-json codex-teams --scope user '{"command":"npx","args":["-y","codex-teams"]}'
+cd your-project
+
+# Launch a mission — blocks until complete, prints JSON result
+codex-teams launch \
+  --objective "Add JWT auth with login/register endpoints, middleware, and tests" \
+  --lead "Tech Lead" \
+  --worker "Backend Engineer" \
+  --worker "Test Engineer" \
+  --verify "npm test"
 ```
 
-**Cursor / Windsurf / VS Code**
-
-Add to your MCP client config:
-
-```json
-{
-  "mcpServers": {
-    "codex-teams": {
-      "command": "npx",
-      "args": ["-y", "codex-teams"]
-    }
-  }
-}
-```
+That's it. The lead plans, workers execute in parallel, they talk to each other, `npm test` runs automatically — you get back JSON with everything they did.
 
 ---
 
-## How It Works
+## Why
 
-You describe an objective. codex-teams creates a team, assigns a lead, and launches workers — all running as parallel Codex threads. The lead coordinates, the workers execute, and they talk to each other throughout.
+A single AI coding agent has one context window. When the task spans multiple layers — API, frontend, tests, configs — it has to constantly switch context, losing track of details. codex-teams solves this by giving each agent its own context window focused on its scope. They communicate through group chat, DMs, and shared artifacts, coordinating like a real engineering team.
 
+- **More context, not just more speed.** Each agent holds its own full context for its scope. Together, the team sees far more of the codebase than one agent ever could.
+- **Agents help each other.** The backend dev shares the API contract; the frontend dev reads it and builds to match. Workers ask each other questions, flag integration issues, and share discoveries as they go.
+- **Verification built in.** A shell command (like `npm test`) runs after completion. If it fails, the lead assigns fixes, workers retry, and it runs again.
+- **You launch and walk away.** Check results when you're ready.
+
+---
+
+## Commands
+
+### `launch` — Run a mission
+
+```bash
+codex-teams launch \
+  --objective "..." \
+  --lead "Tech Lead" \
+  --worker "Backend Engineer" \
+  --worker "Frontend Engineer" \
+  --verify "npm test"
 ```
-You: "Add user profile editing with validation, API endpoints, and tests"
 
-codex-teams:
-  → Creates a team: lead + frontend dev + backend dev + test engineer
-  → Lead posts a plan in group chat with assignments
-  → Workers read the plan and start building in parallel
-  → Backend dev shares the API contract via artifacts
-  → Frontend dev reads it and builds the form to match
-  → Test engineer writes integration tests against both
-  → npm test runs automatically — if something breaks, the team fixes it
-  → You get back the results, artifacts, and full chat history
+Blocks until done. Progress streams to stderr, JSON result to stdout. Exit code 0 = success.
+
+| Flag | Default | Description |
+|---|---|---|
+| `--objective <text>` | *(required)* | What to accomplish. Be specific. |
+| `--lead <role>` | `"Lead"` | Lead agent role name |
+| `--worker <roles...>` | *(required)* | Worker roles (repeatable) |
+| `--verify <command>` | — | Shell command to verify after completion |
+| `--max-retries <n>` | `2` | Verification retry attempts |
+| `--sandbox <mode>` | `workspace-write` | `plan-mode` / `workspace-write` / `danger-full-access` |
+| `--reasoning <effort>` | `xhigh`/`high` | `xhigh` / `high` / `medium` / `low` / `minimal` |
+| `--fast` | `false` | Enable fast output mode |
+| `--team-json <json>` | — | Full team config as JSON (overrides --lead/--worker) |
+
+### `status` — Check missions
+
+```bash
+codex-teams status                  # List all active missions
+codex-teams status <missionId>      # Check a specific mission
 ```
 
-Missions return immediately. You can monitor progress, do other work, and check results when they're ready.
+### `steer` — Redirect mid-mission
+
+```bash
+codex-teams steer <missionId> --directive "Fix the auth bug first"
+```
+
+### `setup` — Install skill for AI tools
+
+```bash
+codex-teams setup           # Auto-detect and install for all found tools
+codex-teams setup --claude   # Claude Code only
+codex-teams setup --codex    # Codex CLI only
+codex-teams setup --all      # Install for everything
+```
+
+### `help` — Usage guide
+
+```bash
+codex-teams help --llm      # Full guide for LLM consumption
+```
 
 ---
 
 ## Examples
 
-### Plan a cross-cutting change
-
-> "I need to change the user ID format from integer to UUID across the entire system. One worker maps every place user IDs appear in the API layer (src/api/), another traces them through the service layer (src/services/) and database queries (src/db/), and a third checks the frontend (src/client/) for hardcoded assumptions about ID format. The lead should compile a migration plan as a shared artifact: what changes where, in what order, what breaks if you get the sequence wrong, and what tests need updating. Don't change any code — deliver the plan."
-
-### Research across repos
-
-> "We're evaluating whether to extract the billing module into its own service. Worker A: map every import and function call into src/billing/ from the rest of the monorepo — I need to know the exact coupling surface. Worker B: trace the data flow for a checkout — from the API handler through billing to the payment provider and back. Worker C: read the test suite in tests/billing/ and document what's tested via unit tests vs integration tests vs not tested at all. Lead: synthesize into a feasibility report — can we extract cleanly, what are the hard dependencies, and what would the interface boundary look like?"
-
-### Investigate and audit
-
-> "Audit every API endpoint in src/api/ for consistent error handling. For each endpoint, document: what errors it catches, whether it returns structured error responses, and whether it logs failures. Produce a prioritized table of findings as a shared artifact. Don't fix anything — just report."
-
 ### Ship a feature
 
-> "Add a /api/settings endpoint that supports GET and PUT for user preferences. The frontend worker should add a Settings page at /settings using the existing PageLayout component. Verify with npm test. Files to start from: src/api/routes.ts, src/pages/, src/components/PageLayout.tsx."
+```bash
+codex-teams launch \
+  --objective "Add user profile editing: PUT /api/users/:id endpoint accepting
+{name, bio, avatarUrl} at src/api/users.ts, React form at src/components/ProfileForm.tsx
+using existing Form primitives from src/components/ui/, and integration tests.
+Follow the pattern in src/api/posts.ts for the endpoint." \
+  --lead "Tech Lead" \
+  --worker "Backend Engineer" \
+  --worker "Frontend Engineer" \
+  --verify "npm test"
+```
+
+### Audit a codebase
+
+```bash
+codex-teams launch \
+  --objective "Audit every API endpoint in src/api/ for: (1) missing input validation,
+(2) SQL injection vectors, (3) missing auth checks, (4) information leakage in error
+responses. Document each finding with file, line, severity, and fix recommendation.
+Output as a structured shared artifact." \
+  --lead "Security Lead" \
+  --worker "API Auditor" \
+  --worker "Auth Auditor"
+```
+
+### Plan a migration
+
+```bash
+codex-teams launch \
+  --objective "Map every place user IDs appear across src/api/, src/services/,
+src/db/, and src/client/. Document the coupling surface, data flow, and hardcoded
+assumptions about ID format. Deliver a migration plan as a shared artifact:
+what changes where, in what order, what breaks. Don't change any code." \
+  --lead "Lead Architect" \
+  --worker "API Mapper" \
+  --worker "DB Mapper" \
+  --worker "Frontend Mapper"
+```
 
 ### Refactor with confidence
 
-> "Refactor the database access layer in src/db/ from raw SQL to use the query builder in src/db/builder.ts. One worker owns the read queries, another owns the writes. Keep all existing tests passing. Verify with npm test."
-
-> [!TIP]
-> The more specific your objective, the better the results. Include file paths, acceptance criteria, constraints, and what "done" looks like. Research missions benefit most from telling each worker exactly where to look and what questions to answer — a team that knows it's producing a report with specific columns will deliver something actionable.
-
----
-
-## Tools
-
-### Mission Lifecycle
-
-| Tool | Description |
-|---|---|
-| `launch_mission` | Start a coordinated mission with a lead and workers. Returns a `missionId` immediately |
-| `mission_status` | Check progress — phase, recent group chat, artifact count |
-| `await_mission` | Block until a mission completes. Returns full results |
-
-### Communication & Control
-
-| Tool | Description |
-|---|---|
-| `get_team_comms` | Live view of all team communication during a running mission |
-| `get_mission_comms` | Full chat history and artifacts after completion (available 30 min) |
-| `steer_team` | Interrupt agents mid-mission and redirect with a new directive |
-
----
-
-## Configuration
-
-Agents use sensible defaults. Override per-agent when launching a mission:
-
-| Setting | Default | Options |
-|---|---|---|
-| **Model** | `gpt-5.4` | Any model supported by Codex CLI |
-| **Sandbox** | `workspace-write` | `plan-mode`, `workspace-write`, `danger-full-access` |
-| **Reasoning** | `xhigh` (lead) / `high` (workers) | `xhigh`, `high`, `medium`, `low`, `minimal` |
-| **Fast Mode** | `false` | `true` for faster output (service_tier=fast) |
-
----
-
-## Architecture
-
-```mermaid
-graph LR
-    U["🧑‍💻 You<br/><sub>Claude Code / MCP Client</sub>"]
-
-    U -->|"launch_mission"| CT["⚙️ codex-teams<br/><sub>MCP Server · stdio</sub>"]
-    U -.->|"mission_status<br/>await_mission<br/>steer_team"| CT
-
-    CT -->|"spawns agents via"| CX["🔧 Codex CLI<br/><sub>MCP Client · stdio</sub>"]
-
-    CX --> L
-    CX --> W1
-    CX --> W2
-
-    subgraph team ["🚀 Mission Team"]
-        direction TB
-        L["👑 Lead<br/><sub>plans · coordinates · reviews</sub>"]
-        W1["🔨 Worker A<br/><sub>owns scope A</sub>"]
-        W2["🔨 Worker B<br/><sub>owns scope B</sub>"]
-    end
-
-    COMMS["💬 Comms Server<br/><sub>HTTP · localhost · per-agent auth</sub>"]
-
-    L <-->|"group chat · DMs · artifacts"| COMMS
-    W1 <-->|"group chat · DMs · artifacts"| COMMS
-    W2 <-->|"group chat · DMs · artifacts"| COMMS
-
-    style team fill:#1a1a2e,stroke:#16213e,stroke-width:2px,color:#e0e0e0
-    style CT fill:#0d1117,stroke:#58a6ff,stroke-width:2px,color:#e0e0e0
-    style CX fill:#0d1117,stroke:#58a6ff,stroke-width:2px,color:#e0e0e0
-    style COMMS fill:#161b22,stroke:#f78166,stroke-width:2px,color:#e0e0e0
-    style U fill:#161b22,stroke:#7ee787,stroke-width:2px,color:#e0e0e0
-    style L fill:#1c2333,stroke:#d2a8ff,stroke-width:1px,color:#e0e0e0
-    style W1 fill:#1c2333,stroke:#79c0ff,stroke-width:1px,color:#e0e0e0
-    style W2 fill:#1c2333,stroke:#79c0ff,stroke-width:1px,color:#e0e0e0
+```bash
+codex-teams launch \
+  --objective "Migrate all 12 class components in src/components/ to functional
+components with hooks. Each must: (1) preserve identical props interface,
+(2) convert lifecycle methods to useEffect, (3) convert this.state to useState,
+(4) pass existing tests unchanged. Do NOT modify test files." \
+  --lead "Migration Lead" \
+  --worker "Component Dev A" \
+  --worker "Component Dev B" \
+  --verify "npm run typecheck && npm test"
 ```
 
-Three layers run simultaneously:
+> **Tip:** The more specific the objective, the better the results. Include file paths, acceptance criteria, constraints, and what "done" looks like.
 
-1. **Stdio MCP Server** — Claude Code connects here. Exposes mission, status, and steering tools
-2. **Stdio MCP Client** — Connects to `codex mcp-server` to spawn and message Codex agents
-3. **HTTP Comms Server** — Localhost-only Express server injected into each agent's MCP config. Handles group chat, DMs, shared artifacts, and per-agent auth
+---
+
+## Advanced: `--team-json`
+
+For full control over per-agent configuration:
+
+```bash
+codex-teams launch \
+  --objective "..." \
+  --team-json '[
+    {"role": "Tech Lead", "isLead": true, "reasoningEffort": "xhigh"},
+    {"role": "Backend", "specialization": "API design and database queries"},
+    {"role": "Frontend", "specialization": "React components", "fastMode": true},
+    {"role": "Tests", "specialization": "Integration testing"}
+  ]'
+```
 
 ---
 
 ## Team Sizing
 
-- **1 lead + 1–3 workers** is the sweet spot
-- More workers means more coordination overhead with diminishing returns
-- Match worker count to genuinely parallelizable work streams
-- Each worker should own a distinct, non-overlapping scope
+| Team | Best for |
+|---|---|
+| 1 lead + 1 worker | Simple tasks, one work stream |
+| 1 lead + 2 workers | Most common — two parallel scopes (e.g., API + frontend) |
+| 1 lead + 3 workers | Complex features — three distinct scopes (e.g., API + UI + tests) |
+| 1 lead + 4+ workers | Rarely worth it — coordination overhead grows fast |
+
+---
+
+## How It Works
+
+```
+codex-teams launch --objective "Add auth with tests" --lead "Lead" --worker "Backend" --worker "Tests" --verify "npm test"
+
+  1. Creates a team: lead + 2 workers
+  2. Starts the comms server (localhost HTTP for group chat, DMs, artifacts)
+  3. Sends all agents their prompts simultaneously
+  4. Lead posts a plan in group chat → workers read it and execute
+  5. Workers share discoveries and coordinate via chat
+  6. npm test runs → if it fails, lead assigns fixes → workers retry
+  7. JSON result printed to stdout
+```
+
+### Architecture
+
+```
+┌─────────────────┐
+│  codex-teams    │  CLI — parses args, orchestrates mission
+│  (your terminal)│
+└────────┬────────┘
+         │ spawns via codex mcp-server
+         ▼
+┌─────────────────┐     ┌─────────────────┐
+│   👑 Lead       │◄───►│  💬 Comms Server │◄───► 🔨 Worker A
+│                 │     │  (localhost HTTP) │◄───► 🔨 Worker B
+└─────────────────┘     └─────────────────┘
+                         group chat · DMs · artifacts
+```
+
+Each agent runs as a Codex CLI thread with its own context window. The comms server provides authenticated group chat, direct messages, shared artifacts, and a wait-for-messages mechanism.
+
+---
+
+## Using with AI Coding Tools
+
+After `codex-teams setup`, your AI assistant discovers codex-teams automatically. The installed skill teaches it:
+
+1. **When to use codex-teams** — recognizes tasks that benefit from multiple agents
+2. **How to gather context from you** — asks about objective, scope, constraints, team before launching
+3. **How to write good objectives** — composes detailed engineering-ticket-quality prompts
+4. **How to run and report results** — executes the CLI and presents the output
+
+You can also invoke it manually: tell your AI assistant "use codex-teams to..." or reference the skill directly.
+
+---
+
+## Configuration
+
+| Setting | Default | Options |
+|---|---|---|
+| Model | `gpt-5.4` | Any model supported by Codex CLI |
+| Sandbox | `workspace-write` | `plan-mode`, `workspace-write`, `danger-full-access` |
+| Reasoning | `xhigh` (lead) / `high` (workers) | `xhigh`, `high`, `medium`, `low`, `minimal` |
+| Fast Mode | `false` | `true` for faster output |
 
 ---
 
@@ -196,8 +268,10 @@ Three layers run simultaneously:
 git clone https://github.com/skrabe/codex-teams.git
 cd codex-teams
 npm install
-npm run build
-node --import tsx --test tests/*.test.ts
+npm run build          # TypeScript → ./build
+npm run bundle         # esbuild → ./dist/index.cjs
+npm run dev            # TypeScript watch mode
+node --import tsx --test tests/*.test.ts    # Run all tests
 ```
 
 ---
@@ -205,10 +279,17 @@ node --import tsx --test tests/*.test.ts
 ## Uninstall
 
 ```bash
-# Claude Code
-claude mcp remove codex-teams
+npm uninstall -g codex-teams
+```
 
-# Other clients: remove the codex-teams entry from your MCP config
+To remove installed skills:
+
+```bash
+rm -rf ~/.claude/skills/codex-teams
+rm -rf ~/.codex/skills/codex-teams
+rm -rf ~/.factory/skills/codex-teams
+rm -rf ~/.config/opencode/skills/codex-teams
+rm -rf ~/.agents/skills/codex-teams
 ```
 
 ---
