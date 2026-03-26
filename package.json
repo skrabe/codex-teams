@@ -1,7 +1,7 @@
 {
   "name": "codex-teams",
-  "version": "2.4.3",
-  "description": "MCP server bridging Claude Code and Codex CLI for team-based agent orchestration",
+  "version": "3.0.0",
+  "description": "CLI for orchestrating teams of Codex CLI agents with inter-agent communication",
   "type": "module",
   "main": "dist/index.cjs",
   "bin": {
@@ -12,12 +12,21 @@
   ],
   "scripts": {
     "build": "tsc",
-    "bundle": "esbuild src/index.ts --bundle --platform=node --target=node18 --format=cjs --outfile=dist/index.cjs",
+    "bundle": "esbuild src/index.ts --bundle --platform=node --target=node18 --format=cjs --minify --outfile=dist/index.cjs",
     "prepublishOnly": "npm run bundle",
     "dev": "tsc --watch",
     "test": "node --import tsx --test tests/*.test.ts"
   },
-  "keywords": ["mcp", "agents", "teams", "orchestration", "codex", "multi-agent", "claude-code"],
+  "keywords": [
+    "cli",
+    "agents",
+    "teams",
+    "orchestration",
+    "codex",
+    "multi-agent",
+    "llm",
+    "ai-coding"
+  ],
   "license": "MIT",
   "repository": {
     "type": "git",
@@ -25,6 +34,7 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.12.1",
+    "commander": "^14.0.3",
     "zod": "^3.24.0"
   },
   "devDependencies": {

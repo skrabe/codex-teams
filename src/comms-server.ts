@@ -441,6 +441,26 @@ export async function startCommsServer(
   const transports = new Map<string, StreamableHTTPServerTransport>();
   const sessionAgents = new Map<string, string>();
 
+  app.post("/steer", async (req: McpRequest, res: McpResponse) => {
+    const body = req.body as { teamId?: string; directive?: string; agentIds?: string[] } | undefined;
+    if (!body?.teamId || !body?.directive) {
+      res.status(400).json({ error: "Missing teamId or directive" });
+      return;
+    }
+    if (!codex) {
+      res.status(500).json({ error: "Codex client not available" });
+      return;
+    }
+    try {
+      const { steerTeam } = await import("./mission.js");
+      const result = await steerTeam(body.teamId, body.directive, body.agentIds, state, codex, messages);
+      res.status(200).json(result);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      res.status(500).json({ error: msg });
+    }
+  });
+
   app.post("/mcp", async (req: McpRequest, res: McpResponse) => {
     const sessionId = req.headers["mcp-session-id"] as string | undefined;
 

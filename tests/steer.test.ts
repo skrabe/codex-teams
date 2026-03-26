@@ -1,10 +1,9 @@
 import { describe, it, beforeEach } from "node:test";
 import assert from "node:assert/strict";
-import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { TeamManager } from "../src/state.js";
 import { MessageSystem } from "../src/messages.js";
 import { CodexClientManager } from "../src/codex-client.js";
-import { createServer } from "../src/server.js";
+import { steerTeam, buildSteerPrompt } from "../src/mission.js";
 import type { Agent } from "../src/types.js";
 
 class MockCodexClient extends CodexClientManager {
@@ -45,14 +44,6 @@ class MockCodexClient extends CodexClientManager {
   }
 }
 
-async function callTool(server: McpServer, name: string, args: Record<string, unknown>) {
-  const tools = (server as unknown as { _registeredTools: Record<string, { handler: Function }> })
-    ._registeredTools;
-  const tool = tools[name];
-  if (!tool) throw new Error(`Tool not found: ${name}`);
-  return tool.handler(args, {});
-}
-
 function createTeamWithAgents(
   state: TeamManager,
   name: string,
@@ -63,17 +54,15 @@ function createTeamWithAgents(
   return { teamId: team.id, agentIds };
 }
 
-describe("steer_team (e2e with mock codex)", () => {
+describe("steerTeam", () => {
   let state: TeamManager;
   let codex: MockCodexClient;
   let messages: MessageSystem;
-  let server: McpServer;
 
   beforeEach(() => {
     state = new TeamManager();
     codex = new MockCodexClient();
     messages = new MessageSystem();
-    server = createServer(state, codex, messages);
   });
 
   it("steers all agents in a team", async () => {
@@ -82,15 +71,11 @@ describe("steer_team (e2e with mock codex)", () => {
       { role: "worker" },
     ]);
 
-    const result = await callTool(server, "steer_team", {
-      teamId,
-      directive: "Switch to writing tests instead",
-    });
+    const result = await steerTeam(teamId, "Switch to writing tests instead", undefined, state, codex, messages);
 
-    const data = JSON.parse(result.content[0].text);
-    assert.deepEqual(data.aborted.sort(), agentIds.sort());
-    assert.deepEqual(data.steered.sort(), agentIds.sort());
-    assert.deepEqual(data.failed, []);
+    assert.deepEqual(result.aborted.sort(), agentIds.sort());
+    assert.deepEqual(result.steered.sort(), agentIds.sort());
+    assert.deepEqual(result.failed, []);
 
     assert.equal(codex.calls.length, 2);
     for (const call of codex.calls) {
@@ -108,15 +93,10 @@ describe("steer_team (e2e with mock codex)", () => {
 
     const subset = [agentIds[1], agentIds[2]];
 
-    const result = await callTool(server, "steer_team", {
-      teamId,
-      directive: "New direction",
-      agentIds: subset,
-    });
+    const result = await steerTeam(teamId, "New direction", subset, state, codex, messages);
 
-    const data = JSON.parse(result.content[0].text);
-    assert.deepEqual(data.aborted.sort(), subset.sort());
-    assert.deepEqual(data.steered.sort(), subset.sort());
+    assert.deepEqual(result.aborted.sort(), subset.sort());
+    assert.deepEqual(result.steered.sort(), subset.sort());
     assert.equal(codex.calls.length, 2);
     assert.ok(codex.calls.every((c) => subset.includes(c.agentId)));
   });
@@ -124,10 +104,7 @@ describe("steer_team (e2e with mock codex)", () => {
   it("posts direction change to group chat", async () => {
     const { teamId } = createTeamWithAgents(state, "test-team", [{ role: "dev" }]);
 
-    await callTool(server, "steer_team", {
-      teamId,
-      directive: "Focus on performance",
-    });
+    await steerTeam(teamId, "Focus on performance", undefined, state, codex, messages);
 
     const chatMessages = messages.getTeamChatMessages(teamId);
     assert.equal(chatMessages.length, 1);
@@ -140,10 +117,7 @@ describe("steer_team (e2e with mock codex)", () => {
   it("includes directive in steer message sent to agents", async () => {
     const { teamId } = createTeamWithAgents(state, "test-team", [{ role: "dev" }]);
 
-    await callTool(server, "steer_team", {
-      teamId,
-      directive: "Refactor auth module",
-    });
+    await steerTeam(teamId, "Refactor auth module", undefined, state, codex, messages);
 
     assert.equal(codex.calls.length, 1);
     const msg = codex.calls[0].message;
@@ -152,14 +126,11 @@ describe("steer_team (e2e with mock codex)", () => {
     assert.ok(msg.includes("Read group_chat"));
   });
 
-  it("returns error for unknown team", async () => {
-    const result = await callTool(server, "steer_team", {
-      teamId: "nonexistent",
-      directive: "anything",
-    });
-
-    assert.equal(result.isError, true);
-    assert.ok(result.content[0].text.includes("Team not found"));
+  it("throws for unknown team", async () => {
+    await assert.rejects(
+      () => steerTeam("nonexistent", "anything", undefined, state, codex, messages),
+      /Team not found/,
+    );
   });
 
   it("handles agent send failure gracefully", async () => {
@@ -170,29 +141,21 @@ describe("steer_team (e2e with mock codex)", () => {
 
     codex.failForAgentId = agentIds[1];
 
-    const result = await callTool(server, "steer_team", {
-      teamId,
-      directive: "New plan",
-    });
+    const result = await steerTeam(teamId, "New plan", undefined, state, codex, messages);
 
-    const data = JSON.parse(result.content[0].text);
-    assert.equal(data.steered.length, 1);
-    assert.equal(data.steered[0], agentIds[0]);
-    assert.equal(data.failed.length, 1);
-    assert.equal(data.failed[0].agentId, agentIds[1]);
-    assert.ok(data.failed[0].error.includes("Simulated failure"));
+    assert.equal(result.steered.length, 1);
+    assert.equal(result.steered[0], agentIds[0]);
+    assert.equal(result.failed.length, 1);
+    assert.equal(result.failed[0].agentId, agentIds[1]);
+    assert.ok(result.failed[0].error.includes("Simulated failure"));
   });
 
   it("returns empty results for team with no agents", async () => {
     const team = state.createTeam("empty-team", []);
 
-    const result = await callTool(server, "steer_team", {
-      teamId: team.id,
-      directive: "anything",
-    });
+    const result = await steerTeam(team.id, "anything", undefined, state, codex, messages);
 
-    const data = JSON.parse(result.content[0].text);
-    assert.deepEqual(data, { aborted: [], steered: [], failed: [] });
+    assert.deepEqual(result, { aborted: [], steered: [], failed: [] });
     assert.equal(codex.calls.length, 0);
   });
 });
