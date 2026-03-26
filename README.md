@@ -220,9 +220,9 @@ codex-teams launch --objective "Add auth with tests" --lead "Lead" --worker "Bac
 ```mermaid
 graph TD
     CLI["codex-teams CLI<br/>(your terminal)"]
-    CLI -->|spawns via codex mcp-server| Lead["Lead"]
-    CLI -->|spawns via codex mcp-server| WA["Worker A"]
-    CLI -->|spawns via codex mcp-server| WB["Worker B"]
+    CLI -->|spawns via Codex CLI| Lead["Lead"]
+    CLI -->|spawns via Codex CLI| WA["Worker A"]
+    CLI -->|spawns via Codex CLI| WB["Worker B"]
     Comms["Comms Server<br/>(localhost HTTP)<br/>group chat · DMs · artifacts"]
     Lead <-->|MCP| Comms
     WA <-->|MCP| Comms

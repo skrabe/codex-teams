@@ -527,9 +527,9 @@ Then run the command and report results back to the user.
 \`\`\`mermaid
 graph TD
     CLI["codex-teams CLI<br/>(your terminal)"]
-    CLI -->|spawns via codex mcp-server| Lead["Lead"]
-    CLI -->|spawns via codex mcp-server| WA["Worker A"]
-    CLI -->|spawns via codex mcp-server| WB["Worker B"]
+    CLI -->|spawns via Codex CLI| Lead["Lead"]
+    CLI -->|spawns via Codex CLI| WA["Worker A"]
+    CLI -->|spawns via Codex CLI| WB["Worker B"]
     Comms["Comms Server<br/>(localhost HTTP)<br/>group chat \xB7 DMs \xB7 artifacts"]
     Lead <-->|MCP| Comms
     WA <-->|MCP| Comms
