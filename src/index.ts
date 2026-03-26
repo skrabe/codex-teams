@@ -7,7 +7,7 @@ import { registerHelpCommand } from "./cli/help.js";
 import { registerSetupCommand } from "./cli/setup.js";
 import { checkForUpdate } from "./cli/update-check.js";
 
-const VERSION = "3.2.0";
+const VERSION = "3.2.1";
 
 const program = new Command();
 
