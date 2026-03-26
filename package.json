@@ -1,6 +1,6 @@
 {
   "name": "codex-teams",
-  "version": "3.2.2",
+  "version": "3.2.3",
   "description": "CLI for orchestrating teams of Codex CLI agents with inter-agent communication",
   "type": "module",
   "main": "dist/index.cjs",
