@@ -244,25 +244,18 @@ error handling improvements, not code fixes."
 
 ## Team sizing and cost
 
-Every agent is a full Codex CLI session making LLM API calls. Cost scales linearly with team
-size and is further multiplied by reasoning level. A 1+2 team at `high` reasoning is roughly
-3x a single agent; bump the lead to `xhigh` and add a fourth worker and you're at 5x+.
-Multiple teams (via `--team-json`) multiply this again — a two-team mission with 3 agents
-each is 6 concurrent LLM sessions.
+One worker per distinct part of the work. If the task has three aspects — API, frontend,
+tests — spawn three workers. If it has six independent areas to audit, spawn six. If each
+aspect is itself a multi-part project, consider multiple teams instead — one team per major
+area, each with its own lead and workers via `--team-json`.
 
-- **1 lead + 1 worker**: Simple tasks, one work stream (~2x single agent cost)
-- **1 lead + 2 workers**: Most common. Two parallel work streams (~3x)
-- **1 lead + 3 workers**: Complex features, three distinct scopes (~4x)
-- **1 lead + 4+ workers**: Rarely worth it. Coordination overhead increases sharply. (5x+)
+Every agent is a full Codex CLI session making LLM API calls. More agents means more cost,
+and higher reasoning levels (`--reasoning`) multiply that further per agent. Use
+`--reasoning medium` or `--fast` for exploratory or low-stakes work to keep costs down.
+Default is `xhigh` for the lead, `high` for workers.
 
-Match worker count to genuinely parallelizable work streams. Don't add workers just because
-the task is big — add them because the work can actually be done in parallel.
-
-Use `--reasoning` to control cost per agent: `xhigh` is the most expensive, `minimal` is
-cheapest. Default is `xhigh` for the lead, `high` for workers. For exploratory or low-stakes
-work, dropping workers to `medium` cuts cost significantly. Use `--fast` for cheaper but
-shallower output. When proposing a team to the user, always mention the cost implications
-of the team size and reasoning levels you're suggesting.
+When proposing a team to the user, always mention the cost implications of the team size
+and reasoning levels you're suggesting.
 
 ## Advanced: --team-json for full control
 

@@ -195,16 +195,9 @@ codex-teams launch \
 
 ## Team Sizing & Cost
 
-Every agent is a full Codex CLI session making LLM API calls. Cost scales linearly with the number of agents and is further multiplied by reasoning level. A 1+2 team at `high` reasoning is roughly 3x a single agent; bump the lead to `xhigh` and add a fourth worker and you're at 5x+. Multiple teams multiply this again — a two-team mission with 3 agents each is 6 concurrent LLM sessions.
+The rule of thumb: one worker per distinct part of the work. If the task has three aspects — API, frontend, tests — spawn three workers. If the task has six independent areas to audit, spawn six workers. If the work is big enough that each aspect is itself a multi-part project, consider multiple teams instead — one team per major area, each with its own lead and workers.
 
-| Team | Best for | Relative cost |
-|---|---|---|
-| 1 lead + 1 worker | Simple tasks, one work stream | ~2x single agent |
-| 1 lead + 2 workers | Most common — two parallel scopes (e.g., API + frontend) | ~3x |
-| 1 lead + 3 workers | Complex features — three distinct scopes (e.g., API + UI + tests) | ~4x |
-| 1 lead + 4+ workers | Rarely worth it — coordination overhead grows fast | 5x+ |
-
-Use `--reasoning` to control cost per agent: `xhigh` is the most expensive, `minimal` is cheapest. The default is `xhigh` for the lead and `high` for workers. For exploratory or low-stakes work, dropping workers to `medium` cuts cost significantly. Use `--fast` for even cheaper but shallower output.
+Every agent is a full Codex CLI session making LLM API calls. More agents means more cost, and higher reasoning levels (`--reasoning`) multiply that further per agent. Use `--reasoning medium` or `--fast` for exploratory or low-stakes work to keep costs down. The default is `xhigh` for the lead and `high` for workers.
 
 ---
 
