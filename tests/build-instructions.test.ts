@@ -86,7 +86,10 @@ describe("buildInstructions", () => {
     has(instr,
       "=== COMMS TOOLS ===",
       "group_chat_post", "group_chat_read", "group_chat_peek",
-      "dm_send", "dm_read", "dm_peek",
+      "dm_send(toAgentId, message, summary)", "dm_read", "dm_peek",
+      "protocol_send", "protocol_read", "protocol_ack", "protocol_peek",
+      "task_create", "task_list", "task_get",
+      "task_update", "task_claim", "task_reset", "task_unassign",
       "share(", "get_shared(", "wait_for_messages",
     );
   });
@@ -97,8 +100,8 @@ describe("buildInstructions", () => {
     const lead = agents.find((a) => a.isLead)!;
     const worker = agents.find((a) => !a.isLead)!;
 
-    has(state.buildInstructions(lead, team.id), "lead_chat_post", "lead_chat_read", "lead_chat_peek");
-    lacks(state.buildInstructions(worker, team.id), "lead_chat_post", "lead_chat_read", "lead_chat_peek");
+    has(state.buildInstructions(lead, team.id), "lead_chat_post", "lead_chat_read", "lead_chat_peek", "permission_respond", "shutdown_teammate");
+    lacks(state.buildInstructions(worker, team.id), "lead_chat_post", "lead_chat_peek", "permission_respond", "shutdown_teammate");
   });
 
   it("includes agent ID in identity section", () => {
@@ -116,7 +119,9 @@ describe("buildInstructions", () => {
     has(instr,
       "=== HOW YOU WORK ===",
       "--- EXECUTION ---", "--- COMMUNICATION ---", "ANTI-PATTERNS",
-      "group_chat", "share()", "get_shared", "wait_for_messages",
+      "group_chat", "share()", "get_shared", "wait_for_messages", "Every DM needs a concise summary",
+      "recommendedTaskId", "lowest unblocked pending task ID",
+      "startup prompt is intentionally scoped", "Do not assume hidden conversation history",
     );
   });
 
@@ -201,5 +206,13 @@ describe("buildInstructions", () => {
     has(leadInstr, "TEAM LEAD", "lead_chat_post");
     has(devInstr, "Team Member");
     lacks(devInstr, "lead_chat_post");
+  });
+
+  it("adds plan-mode guidance for plan-mode workers", () => {
+    const team = state.createTeam("t", [{ role: "planner", sandbox: "plan-mode" }]);
+    const agent = Array.from(team.agents.values())[0];
+    const instr = state.buildInstructions(agent, team.id);
+
+    has(instr, "=== PLAN MODE ===", "plan_approval_request", "plan_approval_response", "Do not implement until");
   });
 });

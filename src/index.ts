@@ -3,8 +3,12 @@ import { Command } from "commander";
 import { registerLaunchCommand } from "./cli/launch.js";
 import { registerStatusCommand } from "./cli/status.js";
 import { registerSteerCommand } from "./cli/steer.js";
+import { registerShutdownCommand } from "./cli/shutdown.js";
+import { registerMessageCommand } from "./cli/message.js";
 import { registerHelpCommand } from "./cli/help.js";
+import { registerTasksCommand } from "./cli/tasks.js";
 import { registerSetupCommand } from "./cli/setup.js";
+import { registerCleanupCommand } from "./cli/cleanup.js";
 import { checkForUpdate } from "./cli/update-check.js";
 
 const VERSION = "3.2.3";
@@ -20,7 +24,11 @@ program
 registerLaunchCommand(program);
 registerStatusCommand(program);
 registerSteerCommand(program);
+registerShutdownCommand(program);
+registerMessageCommand(program);
+registerTasksCommand(program);
 registerSetupCommand(program);
+registerCleanupCommand(program);
 registerHelpCommand(program);
 
 checkForUpdate(VERSION);

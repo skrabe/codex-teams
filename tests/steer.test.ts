@@ -79,8 +79,9 @@ describe("steerTeam", () => {
 
     assert.equal(codex.calls.length, 2);
     for (const call of codex.calls) {
-      assert.ok(call.message.includes("DIRECTION CHANGE FROM ORCHESTRATOR"));
+    assert.ok(call.message.includes("DIRECTION CHANGE FROM ORCHESTRATOR"));
       assert.ok(call.message.includes("Switch to writing tests instead"));
+    assert.ok(call.message.includes("SCOPED RE-ENTRY CONTEXT"));
     }
   });
 
@@ -121,9 +122,12 @@ describe("steerTeam", () => {
 
     assert.equal(codex.calls.length, 1);
     const msg = codex.calls[0].message;
+    assert.ok(msg.includes("SCOPED RE-ENTRY CONTEXT"));
     assert.ok(msg.includes("=== NEW DIRECTIVE ==="));
     assert.ok(msg.includes("Refactor auth module"));
     assert.ok(msg.includes("Read group_chat"));
+    assert.ok(msg.includes("Do not assume any hidden parent transcript"));
+    assert.ok(msg.includes("task_list() / task_get()"));
   });
 
   it("throws for unknown team", async () => {

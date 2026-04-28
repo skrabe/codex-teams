@@ -1,4 +1,7 @@
-import { describe, it, beforeEach } from "node:test";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { describe, it, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { TeamManager } from "../src/state.js";
@@ -25,10 +28,15 @@ describe("wait_for_messages", () => {
   let workerId: string;
   let workerTools: ReturnType<typeof getTools>;
   let leadTools: ReturnType<typeof getTools>;
+  let protocolInboxRoot: string;
+
+  let chatStoreRoot: string;
 
   beforeEach(() => {
     state = new TeamManager();
-    ms = new MessageSystem();
+    protocolInboxRoot = fs.mkdtempSync(path.join(os.tmpdir(), "codex-teams-wait-inboxes-"));
+    chatStoreRoot = fs.mkdtempSync(path.join(os.tmpdir(), "codex-teams-wait-chats-"));
+    ms = new MessageSystem(protocolInboxRoot, chatStoreRoot);
 
     const team = state.createTeam("test-team", [
       { role: "lead", isLead: true },
@@ -46,6 +54,11 @@ describe("wait_for_messages", () => {
     const leadServer = new McpServer({ name: "test", version: "1.0.0" });
     registerCommsTools(leadServer, ms, state, leadId);
     leadTools = getTools(leadServer);
+  });
+
+  afterEach(() => {
+    fs.rmSync(protocolInboxRoot, { recursive: true, force: true });
+    fs.rmSync(chatStoreRoot, { recursive: true, force: true });
   });
 
   it("returns immediately when unreads exist", async () => {
@@ -140,6 +153,20 @@ describe("wait_for_messages", () => {
     assert.equal(data.dms, 1);
   });
 
+  it("protocol message triggers wake-up for recipient", async () => {
+    const waitPromise = workerTools.wait_for_messages.handler({ timeoutMs: 10000 }, {}) as Promise<ToolResult>;
+
+    setTimeout(() => {
+      ms.protocolSend(leadId, workerId, "task_assignment", { taskId: "1" });
+    }, 50);
+
+    const result = await waitPromise;
+    const data = parseResult(result);
+
+    assert.equal(data.timedOut, false);
+    assert.equal(data.protocol, 1);
+  });
+
   it("counting relay 1-10: two agents take turns via group chat", async () => {
     const MAX = 10;
     const log: Array<{ n: number; from: string; elapsed: number }> = [];
@@ -215,7 +242,7 @@ describe("wait_for_messages", () => {
           assert.equal(last.text, String(n - 1), `Expected ${n - 1}, got "${last.text}"`);
         }
 
-        await myTools.dm_send.handler({ toAgentId: partnerId, message: String(n) }, {});
+        await myTools.dm_send.handler({ toAgentId: partnerId, message: String(n), summary: String(n) }, {});
         log.push({ n, from: myRole, elapsed: Date.now() - start });
       }
     }

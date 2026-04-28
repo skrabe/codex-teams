@@ -147,7 +147,7 @@ describe("relay e2e (real HTTP MCP stack)", () => {
 
         await client.callTool({
           name: "dm_send",
-          arguments: { toAgentId: partnerId, message: String(n) },
+          arguments: { toAgentId: partnerId, message: String(n), summary: String(n) },
         });
         log.push({ n, from: role, elapsed: Date.now() - start });
       }

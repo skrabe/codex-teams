@@ -54,7 +54,7 @@ async function waitForMsg(client: Client, timeoutMs = 10000) {
 }
 
 async function dm(client: Client, toAgentId: string, message: string) {
-  await client.callTool({ name: "dm_send", arguments: { toAgentId, message } });
+  await client.callTool({ name: "dm_send", arguments: { toAgentId, message, summary: message } });
 }
 
 describe("coding relay e2e (real HTTP + file I/O)", () => {

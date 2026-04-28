@@ -1,12 +1,24 @@
-import { describe, it, beforeEach } from "node:test";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { describe, it, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import { MessageSystem } from "../src/messages.js";
 
 describe("MessageSystem", () => {
   let ms: MessageSystem;
+  let protocolInboxRoot: string;
+  let chatStoreRoot: string;
 
   beforeEach(() => {
-    ms = new MessageSystem();
+    protocolInboxRoot = fs.mkdtempSync(path.join(os.tmpdir(), "codex-teams-inboxes-"));
+    chatStoreRoot = fs.mkdtempSync(path.join(os.tmpdir(), "codex-teams-chats-"));
+    ms = new MessageSystem(protocolInboxRoot, chatStoreRoot);
+  });
+
+  afterEach(() => {
+    fs.rmSync(protocolInboxRoot, { recursive: true, force: true });
+    fs.rmSync(chatStoreRoot, { recursive: true, force: true });
   });
 
   describe("group chat", () => {
@@ -144,12 +156,13 @@ describe("MessageSystem", () => {
 
   describe("DMs", () => {
     it("sends and reads a DM", () => {
-      ms.dmSend("agent-a", "agent-b", "dev", "hey b");
+      ms.dmSend("agent-a", "agent-b", "dev", "hey b", "Need input");
       const msgs = ms.dmRead("agent-b");
       assert.equal(msgs.length, 1);
       assert.equal(msgs[0].from, "agent-a");
       assert.equal(msgs[0].fromRole, "dev");
       assert.equal(msgs[0].text, "hey b");
+      assert.equal(msgs[0].summary, "Need input");
     });
 
     it("DMs are bidirectional on the same channel", () => {
@@ -211,17 +224,18 @@ describe("MessageSystem", () => {
       assert.equal(empty.length, 0);
     });
 
-    it("filtered read is non-consuming — does not advance cursor", () => {
+    it("filtered read consumes only matching sender messages", () => {
       ms.dmSend("agent-a", "agent-c", "dev", "from a");
       ms.dmSend("agent-b", "agent-c", "tester", "from b");
 
       ms.dmRead("agent-c", "agent-a");
 
       const remaining = ms.dmRead("agent-c");
-      assert.equal(remaining.length, 2);
+      assert.equal(remaining.length, 1);
+      assert.equal(remaining[0].text, "from b");
     });
 
-    it("filtered read does not advance cursor — unfiltered read returns all messages", () => {
+    it("filtered read leaves non-matching senders unread", () => {
       ms.dmSend("agent-a", "agent-c", "dev", "from a");
       ms.dmSend("agent-b", "agent-c", "tester", "from b");
 
@@ -230,10 +244,11 @@ describe("MessageSystem", () => {
       assert.equal(fromA[0].text, "from a");
 
       const remaining = ms.dmRead("agent-c");
-      assert.equal(remaining.length, 2);
+      assert.equal(remaining.length, 1);
+      assert.equal(remaining[0].text, "from b");
     });
 
-    it("filtered read in same channel is non-consuming for subsequent reads", () => {
+    it("filtered read in same channel does not replay previously consumed messages", () => {
       ms.dmSend("agent-a", "agent-b", "dev", "from a");
       ms.dmSend("agent-b", "agent-a", "tester", "from b");
 
@@ -242,8 +257,7 @@ describe("MessageSystem", () => {
       assert.equal(fromA[0].text, "from a");
 
       const remaining = ms.dmRead("agent-b");
-      assert.equal(remaining.length, 1);
-      assert.equal(remaining[0].text, "from a");
+      assert.equal(remaining.length, 0);
     });
 
     it("peek returns total unread DM count across all senders", () => {
@@ -390,6 +404,125 @@ describe("MessageSystem", () => {
     });
   });
 
+  describe("protocol messages", () => {
+    it("sends and reads structured protocol messages separately from chat", () => {
+      ms.protocolSend("lead-a", "worker-a", "task_assignment", { taskId: "1" });
+
+      const protocol = ms.protocolRead("worker-a");
+      assert.equal(typeof protocol.deliveryId, "string");
+      assert.equal(protocol.messages.length, 1);
+      assert.equal(protocol.messages[0].type, "task_assignment");
+      assert.deepEqual(protocol.messages[0].data, { taskId: "1" });
+
+      assert.equal(ms.dmRead("worker-a").length, 0);
+      assert.equal(ms.groupChatRead("team1", "worker-a").length, 0);
+    });
+
+    it("peek does not advance protocol cursor", () => {
+      ms.protocolSend("lead-a", "worker-a", "idle_notification", { state: "idle" });
+
+      assert.equal(ms.protocolPeek("worker-a"), 1);
+      assert.equal(ms.protocolPeek("worker-a"), 1);
+
+      const protocol = ms.protocolRead("worker-a");
+      assert.equal(protocol.messages.length, 1);
+      assert.equal(ms.protocolPeek("worker-a"), 1);
+
+      const summary = ms.protocolSummary("worker-a");
+      assert.equal(summary.queued, 0);
+      assert.equal(summary.leased, 1);
+      assert.equal(summary.nextMessageType, "idle_notification");
+    });
+
+    it("ack requires a matching deliveryId", () => {
+      ms.protocolSend("lead-a", "worker-a", "shutdown_request", { reason: "stop" });
+
+      const batch = ms.protocolRead("worker-a");
+      assert.equal(batch.messages.length, 1);
+
+      const noMatch = ms.protocolAck("worker-a", "not-a-real-delivery");
+      assert.equal(noMatch.length, 0);
+
+      const matched = ms.protocolAck("worker-a", batch.deliveryId!);
+      assert.equal(matched.length, 1);
+      assert.equal(ms.protocolPeek("worker-a"), 0);
+    });
+
+    it("protocol messages are marked read only after ack", () => {
+      ms.protocolSend("lead-a", "worker-a", "shutdown_request", { reason: "stop" });
+
+      const batch = ms.protocolRead("worker-a");
+      assert.equal(batch.messages.length, 1);
+      assert.equal(typeof batch.deliveryId, "string");
+      assert.equal(ms.protocolPeek("worker-a"), 1);
+
+      const acked = ms.protocolAck("worker-a", batch.deliveryId!);
+      assert.equal(acked.length, 1);
+      assert.equal(acked[0].id, batch.messages[0].id);
+      assert.equal(ms.protocolPeek("worker-a"), 0);
+    });
+
+    it("protocol read advances only the recipient inbox", () => {
+      ms.protocolSend("lead-a", "worker-a", "shutdown_request", { reason: "stop" });
+      ms.protocolSend("lead-a", "worker-b", "shutdown_request", { reason: "stop" });
+
+      const batch = ms.protocolRead("worker-a");
+      assert.equal(batch.messages.length, 1);
+      assert.equal(ms.protocolPeek("worker-a"), 1);
+      assert.equal(ms.protocolPeek("worker-b"), 1);
+    });
+
+    it("persists protocol inboxes across message system instances", () => {
+      ms.protocolSend("lead-a", "worker-a", "task_assignment", { taskId: "1" });
+
+      const reloaded = new MessageSystem(protocolInboxRoot);
+      assert.equal(reloaded.protocolPeek("worker-a"), 1);
+
+      const protocol = reloaded.protocolRead("worker-a");
+      assert.equal(protocol.messages.length, 1);
+      assert.equal(protocol.messages[0].type, "task_assignment");
+
+      const afterReadBeforeAck = new MessageSystem(protocolInboxRoot);
+      assert.equal(afterReadBeforeAck.protocolPeek("worker-a"), 1);
+      const acked = afterReadBeforeAck.protocolAck("worker-a", protocol.deliveryId!);
+      assert.equal(acked.length, 1);
+
+      const afterAck = new MessageSystem(protocolInboxRoot);
+      assert.equal(afterAck.protocolPeek("worker-a"), 0);
+    });
+
+    it("returns the same leased delivery until it is acknowledged", () => {
+      ms.protocolSend("lead-a", "worker-a", "shutdown_request", { reason: "stop" });
+
+      const first = ms.protocolRead("worker-a");
+      const second = ms.protocolRead("worker-a");
+
+      assert.equal(first.deliveryId, second.deliveryId);
+      assert.equal(second.messages.length, 1);
+      assert.equal(second.messages[0].type, "shutdown_request");
+    });
+
+    it("queues new protocol messages behind an outstanding leased batch", () => {
+      ms.protocolSend("lead-a", "worker-a", "task_assignment", { taskId: "1" });
+      const first = ms.protocolRead("worker-a");
+      ms.protocolSend("lead-a", "worker-a", "shutdown_request", { reason: "stop" });
+
+      const second = ms.protocolRead("worker-a");
+      assert.equal(second.deliveryId, first.deliveryId);
+      assert.deepEqual(second.messages.map((message) => message.type), ["task_assignment"]);
+
+      const summary = ms.protocolSummary("worker-a");
+      assert.equal(summary.leased, 1);
+      assert.equal(summary.queued, 1);
+      assert.equal(summary.nextMessageType, "task_assignment");
+
+      ms.protocolAck("worker-a", first.deliveryId!);
+      const afterAck = ms.protocolRead("worker-a");
+      assert.equal(afterAck.messages.length, 1);
+      assert.equal(afterAck.messages[0].type, "shutdown_request");
+    });
+  });
+
   describe("shared artifacts", () => {
     it("shares and retrieves artifacts", () => {
       ms.shareArtifact("team1", "agent-a", "src/app.ts — new auth module");
@@ -467,6 +600,7 @@ describe("MessageSystem", () => {
       ms.shareArtifact("team1", "agent-a", "artifact");
       ms.dmSend("agent-a", "agent-b", "dev", "dm msg");
       ms.leadChatPost("agent-a", "lead", "team1", "lead msg");
+      ms.protocolSend("agent-a", "agent-b", "shutdown_request", { reason: "cleanup" });
 
       ms.dissolveTeamWithAgents("team1", ["agent-a", "agent-b"]);
 
@@ -474,6 +608,7 @@ describe("MessageSystem", () => {
       assert.equal(ms.getSharedArtifacts("team1").length, 0);
       assert.equal(ms.dmPeek("agent-a"), 0);
       assert.equal(ms.dmPeek("agent-b"), 0);
+      assert.equal(ms.protocolPeek("agent-b"), 0);
     });
 
     it("preserves cross-team DMs when one side dissolves", () => {

@@ -1,6 +1,7 @@
 import type { Command } from "commander";
 import { readMissionState, listMissionStates } from "./state-file.js";
-import { getMission } from "../mission.js";
+import { getMission, serializeMissionState } from "../mission.js";
+import { isProcessAlive } from "./pid-check.js";
 
 export function registerStatusCommand(program: Command): void {
   program
@@ -12,7 +13,8 @@ export function registerStatusCommand(program: Command): void {
         if (states.length === 0) {
           console.log(JSON.stringify({ activeMissions: [] }, null, 2));
         } else {
-          console.log(JSON.stringify({ activeMissions: states }, null, 2));
+          const enriched = states.map((s) => ({ ...s, alive: s.pid ? isProcessAlive(s.pid) : false }));
+          console.log(JSON.stringify({ activeMissions: enriched }, null, 2));
         }
         return;
       }
@@ -20,12 +22,7 @@ export function registerStatusCommand(program: Command): void {
       const inMemory = getMission(missionId);
       if (inMemory) {
         console.log(JSON.stringify({
-          missionId: inMemory.id,
-          phase: inMemory.phase,
-          teamId: inMemory.teamId,
-          leadId: inMemory.leadId,
-          workerIds: inMemory.workerIds,
-          error: inMemory.error,
+          ...serializeMissionState(inMemory),
         }, null, 2));
         return;
       }

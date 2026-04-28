@@ -1,25 +1,25 @@
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
+import type { PersistedMissionState } from "../mission.js";
+import { TaskStore, getTaskStoreRoot } from "../task-store.js";
+import { isProcessAlive } from "./pid-check.js";
 
-const STATE_DIR = path.join(os.homedir(), ".codex-teams", "missions");
+function getStateDir(): string {
+  return process.env.CODEX_TEAMS_STATE_DIR ?? path.join(os.homedir(), ".codex-teams", "missions");
+}
 
-export interface MissionStateFile {
-  missionId: string;
-  teamId: string;
-  leadId: string;
-  workerIds: string[];
-  phase: string;
+export interface MissionStateFile extends PersistedMissionState {
   commsPort: number;
   pid: number;
 }
 
 function ensureDir(): void {
-  fs.mkdirSync(STATE_DIR, { recursive: true });
+  fs.mkdirSync(getStateDir(), { recursive: true });
 }
 
 function statePath(missionId: string): string {
-  return path.join(STATE_DIR, `${missionId}.json`);
+  return path.join(getStateDir(), `${missionId}.json`);
 }
 
 export function writeMissionState(missionId: string, state: MissionStateFile): void {
@@ -44,12 +44,36 @@ export function removeMissionState(missionId: string): void {
 
 export function listMissionStates(): MissionStateFile[] {
   ensureDir();
-  const files = fs.readdirSync(STATE_DIR).filter((f) => f.endsWith(".json"));
+  const stateDir = getStateDir();
+  const files = fs.readdirSync(stateDir).filter((f) => f.endsWith(".json"));
   return files.map((f) => {
     try {
-      return JSON.parse(fs.readFileSync(path.join(STATE_DIR, f), "utf-8"));
+      return JSON.parse(fs.readFileSync(path.join(stateDir, f), "utf-8"));
     } catch {
       return null;
     }
   }).filter(Boolean);
+}
+
+export function purgeOrphanedMissions(): { purged: string[]; alive: string[] } {
+  const states = listMissionStates();
+  const purged: string[] = [];
+  const alive: string[] = [];
+
+  for (const mission of states) {
+    if (mission.pid && isProcessAlive(mission.pid)) {
+      alive.push(mission.missionId);
+      continue;
+    }
+
+    try {
+      const store = new TaskStore(mission.taskListId, getTaskStoreRoot());
+      if (store.exists()) store.deleteTaskList();
+    } catch {}
+
+    removeMissionState(mission.missionId);
+    purged.push(mission.missionId);
+  }
+
+  return { purged, alive };
 }

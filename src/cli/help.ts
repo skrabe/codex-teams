@@ -29,15 +29,20 @@ and deliver results. Verification commands (e.g. npm test) run automatically.
     --lead <role>          Lead agent role (default: "Lead")
     --worker <roles...>    Worker roles (repeatable, at least one required)
     --verify <command>     Shell command to verify after completion
+    --verifier <role>      Independent verifier role name (strict verdict gate)
     --max-retries <n>      Max verification retries (default: 2)
     --sandbox <mode>       plan-mode | workspace-write | danger-full-access (default: workspace-write)
     --reasoning <effort>   xhigh | high | medium | low | minimal
     --fast                 Enable fast output mode
     --team-json <json>     Full team config as JSON (overrides --lead/--worker)
+    --stale-threshold <min>  Auto-reassign in-progress tasks after N minutes (default: 15, 0 to disable)
+    --isolation <mode>       Agent isolation: worktree (each worker gets a git worktree)
+    --symlink-dirs <dirs>    Comma-separated dirs to symlink in worktrees (default: auto-detect)
+    --no-hints               Suppress launch strategy warnings
 
-  Output: JSON to stdout with leadOutput, workerResults, sharedArtifacts, verificationLog.
+  Output: JSON to stdout with leadOutput, workerResults, sharedArtifacts, verificationLog, verifierResult.
   Progress: Streamed to stderr.
-  Exit code: 0 on success, 1 on error.
+  Exit code: 0 on success, 2 on completed with failures, 1 on error.
 
 ### status [missionId] — Check mission status
   codex-teams status                  # List all active missions
@@ -46,6 +51,41 @@ and deliver results. Verification commands (e.g. npm test) run automatically.
 ### steer <missionId> — Redirect agents mid-mission
   codex-teams steer <missionId> --directive "Switch from REST to GraphQL"
   codex-teams steer <missionId> --directive "Fix the auth bug first" --agents agent-id-1 agent-id-2
+
+
+### message <missionId> — Send operator message to one agent or all agents
+  codex-teams message <missionId> --to lead-abc123 --text "Prioritize auth bug" --summary "Priority change"
+  codex-teams message <missionId> --to "*" --text "Sync on latest API contract"
+
+### tasks <missionId> — Inspect the shared task board
+  codex-teams tasks <missionId>                          # All tasks + stats
+  codex-teams tasks <missionId> --status pending          # Filter by status
+  codex-teams tasks <missionId> --owner worker-abc123     # Filter by owner
+
+### cleanup — Remove orphaned mission resources
+  codex-teams cleanup
+
+  Detects mission state files whose owning process has died (PID no longer alive)
+  and removes their state files and task directories. Runs automatically on launch.
+
+### shutdown <missionId> — Gracefully retire a specific agent
+  codex-teams shutdown <missionId> --agent worker-abc123 --reason "Work complete"
+
+## Team Memory
+
+Agents have persistent memory with two scopes:
+- **private** — personal notes only visible to one agent
+- **team** — shared context visible to all teammates, persists across missions
+
+Memory tools (available to agents via team-comms MCP):
+- memory_write(key, scope, content) — save a memory entry
+- memory_read(key, scope) — read a memory entry
+- memory_list(scope?) — list entries
+- memory_search(query, scope?) — search by text
+- memory_delete(key, scope) — remove an entry
+
+Team memory rejects writes containing secrets (API keys, tokens, private keys).
+Memory is stored at ~/.codex-teams/memory/ (private/ and team/ subdirectories).
 
 ### help — Show this guide
   codex-teams help          # Human-readable

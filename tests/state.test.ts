@@ -1,12 +1,21 @@
-import { describe, it, beforeEach } from "node:test";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { afterEach, beforeEach, describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { TeamManager } from "../src/state.js";
 
 describe("TeamManager", () => {
   let manager: TeamManager;
+  let taskStoreRoot: string;
 
   beforeEach(() => {
-    manager = new TeamManager();
+    taskStoreRoot = fs.mkdtempSync(path.join(os.tmpdir(), "codex-teams-state-"));
+    manager = new TeamManager(taskStoreRoot);
+  });
+
+  afterEach(() => {
+    fs.rmSync(taskStoreRoot, { recursive: true, force: true });
   });
 
   describe("createTeam", () => {
@@ -43,6 +52,11 @@ describe("TeamManager", () => {
       assert.equal(agent.isLead, false);
       assert.equal(agent.fastMode, false);
       assert.equal(agent.status, "idle");
+      assert.equal(agent.lifecycle, "created");
+      assert.equal(agent.isActive, false);
+      assert.equal(agent.awaitingPlanApproval, false);
+      assert.ok(agent.lastSeenAt instanceof Date);
+      assert.equal(agent.terminalReason, undefined);
       assert.equal(agent.lastOutput, "");
       assert.equal(agent.threadId, null);
       assert.deepEqual(agent.tasks, []);
@@ -97,6 +111,28 @@ describe("TeamManager", () => {
       assert.notEqual(t1.id, t2.id);
       assert.equal(manager.listTeams().length, 2);
     });
+
+    it("rejects creation when an active team with a lead already exists", () => {
+      const team = manager.createTeam("team-1", [{ role: "lead", isLead: true }, { role: "dev" }]);
+      const lead = Array.from(team.agents.values()).find((a) => a.isLead)!;
+      lead.isActive = true;
+
+      assert.throws(
+        () => manager.createTeam("team-2", [{ role: "lead2", isLead: true }]),
+        /Only one team per leader session/,
+      );
+    });
+
+    it("allows creation after prior team lead is deactivated", () => {
+      const team = manager.createTeam("team-1", [{ role: "lead", isLead: true }]);
+      const lead = Array.from(team.agents.values()).find((a) => a.isLead)!;
+      lead.isActive = true;
+      lead.isActive = false;
+      lead.status = "idle";
+
+      const t2 = manager.createTeam("team-2", [{ role: "lead2", isLead: true }]);
+      assert.ok(t2.id);
+    });
   });
 
   describe("getTeam", () => {
@@ -120,6 +156,32 @@ describe("TeamManager", () => {
 
     it("returns false for nonexistent team", () => {
       assert.equal(manager.dissolveTeam("nonexistent"), false);
+    });
+
+    it("throws when active members exist without force", () => {
+      const team = manager.createTeam("t", [{ role: "lead", isLead: true }, { role: "dev" }]);
+      const agent = Array.from(team.agents.values())[0];
+      agent.isActive = true;
+
+      assert.throws(() => manager.dissolveTeam(team.id), /active member/);
+      assert.ok(manager.getTeam(team.id));
+    });
+
+    it("dissolves with force even when active members exist", () => {
+      const team = manager.createTeam("t", [{ role: "lead", isLead: true }, { role: "dev" }]);
+      const agent = Array.from(team.agents.values())[0];
+      agent.isActive = true;
+
+      assert.equal(manager.dissolveTeam(team.id, { force: true }), true);
+      assert.equal(manager.getTeam(team.id), undefined);
+    });
+
+    it("throws when working members exist without force", () => {
+      const team = manager.createTeam("t", [{ role: "dev" }]);
+      const agent = Array.from(team.agents.values())[0];
+      agent.status = "working";
+
+      assert.throws(() => manager.dissolveTeam(team.id), /active member/);
     });
   });
 
@@ -177,6 +239,56 @@ describe("TeamManager", () => {
     });
   });
 
+  describe("terminateAgent", () => {
+    it("removes an agent without idle/task guards", () => {
+      const team = manager.createTeam("t", [{ role: "dev" }]);
+      const agent = Array.from(team.agents.values())[0];
+      agent.status = "working";
+
+      assert.equal(manager.terminateAgent(team.id, agent.id), true);
+      assert.equal(manager.getAgent(team.id, agent.id), undefined);
+    });
+  });
+
+  describe("setAwaitingPlanApproval", () => {
+    it("updates the agent flag", () => {
+      const team = manager.createTeam("t", [{ role: "dev" }]);
+      const agent = Array.from(team.agents.values())[0];
+
+      manager.setAwaitingPlanApproval(team.id, agent.id, true);
+      assert.equal(manager.getAgent(team.id, agent.id)?.awaitingPlanApproval, true);
+      assert.equal(manager.getAgent(team.id, agent.id)?.lifecycle, "waiting_plan_approval");
+      assert.equal(manager.getAgent(team.id, agent.id)?.isActive, false);
+
+      manager.setAwaitingPlanApproval(team.id, agent.id, false);
+      assert.equal(manager.getAgent(team.id, agent.id)?.awaitingPlanApproval, false);
+      assert.equal(manager.getAgent(team.id, agent.id)?.lifecycle, "idle");
+    });
+  });
+
+  describe("updateAgentRuntime", () => {
+    it("updates runtime lifecycle fields", () => {
+      const team = manager.createTeam("t", [{ role: "dev" }]);
+      const agent = Array.from(team.agents.values())[0];
+
+      const updated = manager.updateAgentRuntime(team.id, agent.id, {
+        status: "working",
+        lifecycle: "working",
+        isActive: true,
+        threadId: "thread-1",
+        lastOutput: "partial output",
+        terminalReason: null,
+      });
+
+      assert.equal(updated.status, "working");
+      assert.equal(updated.lifecycle, "working");
+      assert.equal(updated.isActive, true);
+      assert.equal(updated.threadId, "thread-1");
+      assert.equal(updated.lastOutput, "partial output");
+      assert.equal(updated.terminalReason, undefined);
+    });
+  });
+
   describe("getAgent", () => {
     it("returns agent by ID", () => {
       const team = manager.createTeam("t", [{ role: "dev" }]);
@@ -217,10 +329,13 @@ describe("TeamManager", () => {
 
       assert.ok(task.id);
       assert.equal(task.description, "Build feature X");
+      assert.equal(task.subject, "Build feature X");
       assert.equal(task.status, "pending");
-      assert.equal(task.assignedTo, agentId);
+      assert.equal(task.owner, agentId);
       assert.deepEqual(task.dependencies, []);
+      assert.deepEqual(task.blockedBy, []);
       assert.ok(task.createdAt instanceof Date);
+      assert.ok(task.updatedAt instanceof Date);
       assert.equal(task.completedAt, undefined);
       assert.equal(task.result, undefined);
     });
@@ -260,10 +375,11 @@ describe("TeamManager", () => {
       const task = manager.createTask(team.id, agentId, "Do thing");
 
       manager.completeTask(team.id, task.id, "Done!");
+      const completed = manager.getTask(team.id, task.id)!;
 
-      assert.equal(task.status, "completed");
-      assert.equal(task.result, "Done!");
-      assert.ok(task.completedAt instanceof Date);
+      assert.equal(completed.status, "completed");
+      assert.equal(completed.result, "Done!");
+      assert.ok(completed.completedAt instanceof Date);
     });
 
     it("returns empty array when no tasks are unblocked", () => {
@@ -335,7 +451,7 @@ describe("TeamManager", () => {
 
       const taskA = manager.createTask(team.id, agentA, "Task A");
       const taskB = manager.createTask(team.id, agentB, "Task B", [taskA.id]);
-      taskB.status = "in-progress";
+      manager.updateTask(team.id, taskB.id, { status: "in-progress", owner: agentB });
 
       const unblocked = manager.completeTask(team.id, taskA.id, "A done");
       assert.deepEqual(unblocked, []);

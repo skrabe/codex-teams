@@ -1,4 +1,7 @@
-import { describe, it, beforeEach } from "node:test";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { describe, it, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import { TeamManager } from "../src/state.js";
 import { MessageSystem } from "../src/messages.js";
@@ -22,9 +25,12 @@ describe("Comms Access Control (unit)", () => {
   let lead2Id: string;
   let worker2aId: string;
 
+  let tmpDir: string;
+
   beforeEach(() => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "codex-teams-access-"));
     state = new TeamManager();
-    ms = new MessageSystem();
+    ms = new MessageSystem(path.join(tmpDir, "inboxes"), path.join(tmpDir, "chats"));
 
     const team1 = state.createTeam("frontend", [
       { role: "lead", isLead: true, specialization: "Frontend architecture" },
@@ -45,6 +51,10 @@ describe("Comms Access Control (unit)", () => {
     const t2agents = Array.from(team2.agents.values());
     lead2Id = t2agents.find((a) => a.isLead)!.id;
     worker2aId = t2agents.find((a) => a.role === "dev-a")!.id;
+  });
+
+  afterEach(() => {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
   });
 
   describe("group chat access", () => {
