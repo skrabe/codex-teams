@@ -1160,7 +1160,7 @@ function createVerifierAgent(mission: MissionState, lead: Agent): Agent {
     baseInstructions: "",
     cwd: lead.cwd,
     approvalPolicy: "never",
-    reasoningEffort: "high",
+    reasoningEffort: "none",
     isLead: false,
     fastMode: false,
     status: "idle",
@@ -1558,7 +1558,8 @@ export interface LaunchMissionParams {
     isLead?: boolean;
     sandbox?: "plan-mode" | "workspace-write" | "danger-full-access";
     approvalPolicy?: "untrusted" | "on-request" | "on-failure" | "never";
-    reasoningEffort?: "xhigh" | "high" | "medium" | "low" | "minimal";
+    model?: string;
+    reasoningEffort?: "none" | "minimal" | "low" | "medium" | "high" | "xhigh";
     fastMode?: boolean;
     isolation?: IsolationMode;
     symlinkDirs?: string[];
@@ -1587,6 +1588,7 @@ export function createMission(
       isLead: t.isLead,
       sandbox: t.sandbox,
       approvalPolicy: t.approvalPolicy,
+      model: t.model,
       reasoningEffort: t.reasoningEffort,
       fastMode: t.fastMode,
       cwd: params.workDir,

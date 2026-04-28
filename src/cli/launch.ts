@@ -25,7 +25,8 @@ export function registerLaunchCommand(program: Command): void {
     .option("--verifier <role>", "Run independent verifier agent with the given role name")
     .option("--max-retries <n>", "Max verification retry attempts", "2")
     .option("--sandbox <mode>", "Sandbox mode: plan-mode | workspace-write | danger-full-access", "workspace-write")
-    .option("--reasoning <effort>", "Reasoning effort: xhigh | high | medium | low | minimal")
+    .option("--model <model>", "Codex model", "gpt-5.5")
+    .option("--reasoning <effort>", "Reasoning effort: none | minimal | low | medium | high | xhigh", "none")
     .option("--fast", "Enable fast output mode (service_tier=fast)")
     .option("--team-json <json>", "Full team config as JSON (overrides --lead/--worker)")
     .option("--hook-task-created <command>", "Shell command for TaskCreated hook")
@@ -70,7 +71,8 @@ export function registerLaunchCommand(program: Command): void {
           specialization?: string;
           isLead?: boolean;
           sandbox?: "plan-mode" | "workspace-write" | "danger-full-access";
-          reasoningEffort?: "xhigh" | "high" | "medium" | "low" | "minimal";
+          model?: string;
+          reasoningEffort?: "none" | "minimal" | "low" | "medium" | "high" | "xhigh";
           fastMode?: boolean;
           isolation?: "worktree";
           symlinkDirs?: string[];
@@ -89,6 +91,7 @@ export function registerLaunchCommand(program: Command): void {
             {
               role: opts.lead,
               isLead: true,
+              model: opts.model,
               sandbox: opts.sandbox,
               reasoningEffort: opts.reasoning,
               fastMode: opts.fast ?? false,
@@ -96,6 +99,7 @@ export function registerLaunchCommand(program: Command): void {
             ...workers.map((role: string) => ({
               role,
               isLead: false,
+              model: opts.model,
               sandbox: opts.sandbox,
               reasoningEffort: opts.reasoning,
               fastMode: opts.fast ?? false,

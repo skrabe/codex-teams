@@ -94,4 +94,27 @@ describe("codex-client startup context hygiene", () => {
       threadId: `thread-${worker.id}`,
     });
   });
+
+  it("uses GPT-5.5 with no reasoning by default", async () => {
+    await codex.sendToAgent(worker, "Initial scoped startup payload");
+
+    assert.equal(codex.toolCalls[0].arguments.model, "gpt-5.5");
+    assert.deepEqual(codex.toolCalls[0].arguments.config, {
+      model_reasoning_effort: "none",
+      search: true,
+      model_reasoning_summary: "none",
+    });
+  });
+
+  it("passes explicit reasoning effort when configured", async () => {
+    worker.reasoningEffort = "medium";
+
+    await codex.sendToAgent(worker, "Initial scoped startup payload");
+
+    assert.equal(codex.toolCalls[0].arguments.model, "gpt-5.5");
+    assert.deepEqual(codex.toolCalls[0].arguments.config, {
+      model_reasoning_effort: "medium",
+      search: true,
+    });
+  });
 });

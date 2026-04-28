@@ -41,14 +41,14 @@ describe("TeamManager", () => {
       const team = manager.createTeam("defaults", [{ role: "dev" }]);
       const agent = Array.from(team.agents.values())[0];
 
-      assert.equal(agent.model, "gpt-5.4");
+      assert.equal(agent.model, "gpt-5.5");
       assert.equal(agent.sandbox, "workspace-write");
       assert.equal(agent.approvalPolicy, "never");
       assert.equal(agent.baseInstructions, "");
       const instructions = manager.buildInstructions(agent, team.id);
       assert.ok(instructions.includes("Team Member"));
       assert.equal(agent.specialization, "");
-      assert.equal(agent.reasoningEffort, "high");
+      assert.equal(agent.reasoningEffort, "none");
       assert.equal(agent.isLead, false);
       assert.equal(agent.fastMode, false);
       assert.equal(agent.status, "idle");
@@ -82,7 +82,7 @@ describe("TeamManager", () => {
       assert.equal(agent.cwd, "/tmp/test");
       assert.equal(agent.approvalPolicy, "on-request");
       assert.equal(agent.isLead, true);
-      assert.equal(agent.reasoningEffort, "xhigh");
+      assert.equal(agent.reasoningEffort, "none");
       assert.equal(agent.specialization, "System architecture");
       assert.equal(agent.baseInstructions, "Focus on architecture.");
       const instructions = manager.buildInstructions(agent, team.id);
@@ -98,7 +98,7 @@ describe("TeamManager", () => {
       const agent = Array.from(team.agents.values())[0];
 
       assert.equal(agent.isLead, false);
-      assert.equal(agent.reasoningEffort, "high");
+      assert.equal(agent.reasoningEffort, "none");
       const instructions = manager.buildInstructions(agent, team.id);
       assert.ok(instructions.includes("Team Member"));
       assert.ok(instructions.includes("React/TypeScript UI components"));

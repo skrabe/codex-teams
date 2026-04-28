@@ -32,7 +32,8 @@ and deliver results. Verification commands (e.g. npm test) run automatically.
     --verifier <role>      Independent verifier role name (strict verdict gate)
     --max-retries <n>      Max verification retries (default: 2)
     --sandbox <mode>       plan-mode | workspace-write | danger-full-access (default: workspace-write)
-    --reasoning <effort>   xhigh | high | medium | low | minimal
+    --model <model>         Codex model (default: gpt-5.5)
+    --reasoning <effort>   none | minimal | low | medium | high | xhigh (default: none)
     --fast                 Enable fast output mode
     --team-json <json>     Full team config as JSON (overrides --lead/--worker)
     --stale-threshold <min>  Auto-reassign in-progress tasks after N minutes (default: 15, 0 to disable)
@@ -119,7 +120,7 @@ For full control over team composition:
   codex-teams launch \\
     --objective "..." \\
     --team-json '[
-      {"role": "Tech Lead", "isLead": true, "reasoningEffort": "xhigh"},
+      {"role": "Tech Lead", "isLead": true, "model": "gpt-5.5", "reasoningEffort": "medium"},
       {"role": "Backend", "specialization": "API design", "sandbox": "workspace-write"},
       {"role": "Frontend", "specialization": "React components", "fastMode": true}
     ]'

@@ -385,6 +385,9 @@ export class CodexClientManager {
           model_reasoning_effort: agent.reasoningEffort,
           search: true,
         };
+        if (agent.reasoningEffort === "none") {
+          config.model_reasoning_summary = "none";
+        }
         if (agent.fastMode) {
           config.service_tier = "fast";
         }
