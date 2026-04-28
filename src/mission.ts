@@ -995,6 +995,18 @@ function getWorkerFailures(results: WorkerResult[]): WorkerResult[] {
   return results.filter((result) => result.status === "error");
 }
 
+function getShutdownGraceMs(): number {
+  const raw = process.env.CODEX_TEAMS_SHUTDOWN_GRACE_MS;
+  if (!raw) return 120_000;
+  const parsed = Number(raw);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : 120_000;
+}
+
+function isShutdownAbortOutput(output: string): boolean {
+  const lower = output.toLowerCase();
+  return lower.includes("aborterror") || lower.includes("operation was aborted") || lower.includes("worker_lifecycle_aborted");
+}
+
 function assertNoWorkerFailures(results: WorkerResult[], context: string): void {
   const failures = getWorkerFailures(results);
   if (failures.length === 0) return;
@@ -1206,7 +1218,7 @@ async function shutdownWorkersAndCollectResults(
   const allResultsPromise = Promise.all(workerRuns.map(({ promise }) => promise));
   let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
   const timeoutPromise = new Promise<{ timedOut: true }>((resolve) => {
-    timeoutHandle = setTimeout(() => resolve({ timedOut: true }), 15_000);
+    timeoutHandle = setTimeout(() => resolve({ timedOut: true }), getShutdownGraceMs());
     timeoutHandle.unref?.();
   });
   const settled = await Promise.race([
@@ -1235,9 +1247,15 @@ async function shutdownWorkersAndCollectResults(
     }
   }
 
-  const results = await allResultsPromise;
+  const results = (await allResultsPromise).map((result) =>
+    graceTimeout && isShutdownAbortOutput(result.output)
+      ? { ...result, status: "success" as const }
+      : result,
+  );
   for (const result of results) {
     const mode = graceTimeout ? (forced.has(result.agentId) ? "forced" : "grace_timeout") : "graceful";
+    const agent = team.agents.get(result.agentId);
+    if (agent) agent.status = result.status === "error" ? "error" : "idle";
     updateMissionAgentState(team.id, result.agentId, {
       status: result.status === "error" ? "error" : "idle",
       lifecycle: result.status === "error" ? "error" : "terminated",

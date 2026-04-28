@@ -109,7 +109,7 @@ export function registerLaunchCommand(program: Command): void {
           ];
         }
 
-        if (!opts.noHints) {
+        if (opts.hints !== false) {
           const warnings = emitLaunchWarnings({
             team: teamConfig,
             verify: opts.verify,

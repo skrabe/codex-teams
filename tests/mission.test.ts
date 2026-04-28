@@ -322,6 +322,59 @@ describe("createMission + runMission", () => {
     assert.equal(mission.workerResults.some((result) => result.status === "error"), true);
   });
 
+  it("treats shutdown grace aborts as successful forced termination", async () => {
+    const previousGrace = process.env.CODEX_TEAMS_SHUTDOWN_GRACE_MS;
+    process.env.CODEX_TEAMS_SHUTDOWN_GRACE_MS = "1";
+    const aborts = new Map<string, () => void>();
+
+    codex.sendToAgent = async (agent: Agent, message: string) => {
+      codex.calls.push({ agentId: agent.id, message });
+      agent.status = "working";
+      agent.threadId = agent.threadId ?? `thread-${agent.id}`;
+      if (agent.isLead) {
+        agent.lastOutput = "lead done";
+        agent.status = "idle";
+        return "lead done";
+      }
+
+      return new Promise<string>((_resolve, reject) => {
+        aborts.set(agent.id, () => {
+          agent.status = "error";
+          reject(new Error("MCP error -32001: AbortError: This operation was aborted"));
+        });
+      });
+    };
+    codex.abortTeam = (agentIds: string[]) => {
+      for (const agentId of agentIds) aborts.get(agentId)?.();
+      return agentIds;
+    };
+
+    try {
+      const { mission, team } = createMission(
+        {
+          objective: "Shutdown slow worker",
+          workDir: "/tmp",
+          team: [{ role: "lead", isLead: true }, { role: "worker" }],
+        },
+        state,
+      );
+
+      await runMission(mission, team, codex, state, messages);
+
+      assert.equal(mission.phase, "completed");
+      assert.equal(mission.workerResults.length, 1);
+      assert.equal(mission.workerResults[0].status, "success");
+      assert.equal(mission.agentStates.get(mission.workerIds[0])?.terminationMode, "forced");
+      assert.equal(mission.agentStates.get(mission.workerIds[0])?.lifecycle, "terminated");
+    } finally {
+      if (previousGrace === undefined) {
+        delete process.env.CODEX_TEAMS_SHUTDOWN_GRACE_MS;
+      } else {
+        process.env.CODEX_TEAMS_SHUTDOWN_GRACE_MS = previousGrace;
+      }
+    }
+  });
+
   it("fails mission when worker returns a hook-blocked error", async () => {
     codex.sendToAgent = async (agent: Agent, message: string) => {
       codex.calls.push({ agentId: agent.id, message });
