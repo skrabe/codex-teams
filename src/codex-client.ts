@@ -148,7 +148,7 @@ export class CodexClientManager {
 
   trackOp(op: Promise<unknown>): void {
     this.pendingOps.add(op);
-    op.finally(() => this.pendingOps.delete(op));
+    op.finally(() => this.pendingOps.delete(op)).catch(() => {});
   }
 
   abortAgent(agentId: string): boolean {
