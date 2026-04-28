@@ -1636,6 +1636,26 @@ export async function startCommsServer(
     res.status(400).json({ error: "Invalid request" });
   });
 
+  app.get("/mcp", async (req: McpRequest, res: McpResponse) => {
+    const sessionId = req.headers["mcp-session-id"] as string | undefined;
+    if (!sessionId || !transports.has(sessionId)) {
+      res.status(404).json({ error: "Session not found" });
+      return;
+    }
+
+    await transports.get(sessionId)!.handleRequest(req, res);
+  });
+
+  app.delete("/mcp", async (req: McpRequest, res: McpResponse) => {
+    const sessionId = req.headers["mcp-session-id"] as string | undefined;
+    if (!sessionId || !transports.has(sessionId)) {
+      res.status(404).json({ error: "Session not found" });
+      return;
+    }
+
+    await transports.get(sessionId)!.handleRequest(req, res);
+  });
+
   const httpServer = app.listen(0, "127.0.0.1");
   await new Promise<void>((resolve) => httpServer.on("listening", resolve));
   const addr = httpServer.address();

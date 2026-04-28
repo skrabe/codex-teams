@@ -158,6 +158,31 @@ describe("comms server HTTP", () => {
     assert.ok(sessionId.length > 0, "Session ID should not be empty");
   });
 
+  it("supports session GET stream after initialize", async () => {
+    const state = new TeamManager(taskStoreRoot);
+    const messages = new MessageSystem(protocolInboxRoot, chatStoreRoot);
+    state.createTeam("test-team", [{ role: "dev" }]);
+    const result = await startCommsServer(messages, state);
+    httpServer = result.httpServer;
+
+    const agent = Array.from(state.listTeams()[0].agents.values())[0];
+    const sessionId = await initializeAgent(result.port, agent.id);
+    const controller = new AbortController();
+
+    const res = await fetch(`http://127.0.0.1:${result.port}/mcp`, {
+      method: "GET",
+      headers: {
+        Accept: "text/event-stream",
+        "mcp-session-id": sessionId,
+      },
+      signal: controller.signal,
+    });
+    controller.abort();
+
+    assert.equal(res.status, 200);
+    assert.match(res.headers.get("content-type") ?? "", /text\/event-stream/);
+  });
+
   it("can call tools after initialize", async () => {
     const state = new TeamManager(taskStoreRoot);
     const messages = new MessageSystem(protocolInboxRoot, chatStoreRoot);
