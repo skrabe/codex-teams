@@ -1255,7 +1255,13 @@ async function shutdownWorkersAndCollectResults(
   for (const result of results) {
     const mode = graceTimeout ? (forced.has(result.agentId) ? "forced" : "grace_timeout") : "graceful";
     const agent = team.agents.get(result.agentId);
-    if (agent) agent.status = result.status === "error" ? "error" : "idle";
+    if (agent) {
+      agent.status = result.status === "error" ? "error" : "idle";
+      agent.lifecycle = result.status === "error" ? "error" : "terminated";
+      agent.isActive = false;
+      agent.terminalReason = result.status === "error" ? result.output : "mission_complete";
+      agent.lastSeenAt = new Date();
+    }
     updateMissionAgentState(team.id, result.agentId, {
       status: result.status === "error" ? "error" : "idle",
       lifecycle: result.status === "error" ? "error" : "terminated",
