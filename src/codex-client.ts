@@ -567,6 +567,12 @@ ${message}`;
     const transport = new StdioClientTransport({
       command: "codex",
       args: ["mcp-server"],
+      stderr: "pipe",
+    });
+    transport.stderr?.on("data", (chunk: Buffer) => {
+      const text = chunk.toString("utf8");
+      if (text.includes("rmcp::transport::streamable_http_client") && text.includes("fail to delete session")) return;
+      process.stderr.write(chunk);
     });
 
     const client = new Client({ name: "codex-teams", version: "2.0.0" }, { capabilities: {} });
