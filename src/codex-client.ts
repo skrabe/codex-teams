@@ -620,10 +620,6 @@ ${message}`;
 
   private async closeSession(session: AgentSession): Promise<void> {
     session.connected = false;
-    try {
-      void Promise.resolve().then(() => session.transport.close()).catch(() => {});
-      await delay(250);
-    } catch {}
   }
 
   private extractOutput(result: unknown): string {
