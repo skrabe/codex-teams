@@ -42,10 +42,23 @@ export function registerLaunchCommand(program: Command): void {
       const messages = new MessageSystem();
       const codex = new CodexClientManager();
 
-      let httpServer: ReturnType<typeof startCommsServer> extends Promise<infer T> ? T : never;
+      let httpServer: (ReturnType<typeof startCommsServer> extends Promise<infer T> ? T : never) | undefined;
       let uninstallCleanupHandlers: (() => void) | undefined;
       let cleanupContext: RuntimeCleanupContext | undefined;
       let exitCode = 1;
+      let exiting = false;
+
+      const cleanupAndExit = async (code: number): Promise<never> => {
+        if (exiting) process.exit(code);
+        exiting = true;
+        const forceExit = setTimeout(() => process.exit(code), 15_000);
+        uninstallCleanupHandlers?.();
+        await codex.disconnect().catch(() => {});
+        await new Promise((resolve) => setTimeout(resolve, 5_000));
+        if (httpServer) httpServer.httpServer.close();
+        clearTimeout(forceExit);
+        process.exit(code);
+      };
 
       try {
         const orphans = purgeOrphanedMissions();
@@ -143,7 +156,7 @@ export function registerLaunchCommand(program: Command): void {
             registerMissionPersistence(mission, (snapshot) => {
               writeMissionState(mission.id, {
                 ...snapshot,
-                commsPort: httpServer.port,
+                commsPort: httpServer!.port,
                 pid: process.pid,
               });
             });
@@ -155,7 +168,7 @@ export function registerLaunchCommand(program: Command): void {
                 state,
                 codex,
                 messages,
-                httpServer: httpServer.httpServer,
+                httpServer: httpServer!.httpServer,
               };
               uninstallCleanupHandlers = installRuntimeCleanupHandlers(cleanupContext);
             }
@@ -171,7 +184,7 @@ export function registerLaunchCommand(program: Command): void {
               writeMissionState(mission.id, {
                 ...serializeMissionState(mission),
                 phase: p.phase,
-                commsPort: httpServer.port,
+                commsPort: httpServer!.port,
                 pid: process.pid,
               });
             }),
@@ -226,7 +239,7 @@ export function registerLaunchCommand(program: Command): void {
             : teamResults.some((result) => result.phase === "error")
               ? 1
               : 2;
-          return;
+          await cleanupAndExit(exitCode);
         }
 
         let teamConfig: Array<{
@@ -303,7 +316,7 @@ export function registerLaunchCommand(program: Command): void {
         registerMissionPersistence(mission, (snapshot) => {
           writeMissionState(mission.id, {
             ...snapshot,
-            commsPort: httpServer.port,
+            commsPort: httpServer!.port,
             pid: process.pid,
           });
         });
@@ -325,7 +338,7 @@ export function registerLaunchCommand(program: Command): void {
           writeMissionState(mission.id, {
             ...serializeMissionState(mission),
             phase: p.phase,
-            commsPort: httpServer.port,
+            commsPort: httpServer!.port,
             pid: process.pid,
           });
         });
@@ -390,6 +403,7 @@ export function registerLaunchCommand(program: Command): void {
         uninstallCleanupHandlers?.();
         removeMissionState(mission.id);
         exitCode = mission.phase === "completed" ? 0 : mission.phase === "completed_with_failures" ? 2 : 1;
+        await cleanupAndExit(exitCode);
       } catch (error) {
         const msg = error instanceof Error ? error.message : String(error);
         console.error(`codex-teams: fatal error: ${msg}`);
@@ -397,14 +411,14 @@ export function registerLaunchCommand(program: Command): void {
         uninstallCleanupHandlers?.();
         if (cleanupContext) await cleanupMissionRuntime(cleanupContext, "launch_failure");
         exitCode = 1;
+        await cleanupAndExit(exitCode);
       } finally {
-        const forceExit = setTimeout(() => process.exit(exitCode), 15_000);
-        uninstallCleanupHandlers?.();
-        await codex.disconnect().catch(() => {});
-        await new Promise((resolve) => setTimeout(resolve, 5_000));
-        // @ts-expect-error httpServer may not be assigned
-        if (httpServer) httpServer.httpServer.close();
-        clearTimeout(forceExit);
+        if (!exiting) {
+          uninstallCleanupHandlers?.();
+          await codex.disconnect().catch(() => {});
+          await new Promise((resolve) => setTimeout(resolve, 5_000));
+          if (httpServer) httpServer.httpServer.close();
+        }
       }
       process.exit(exitCode);
     });
