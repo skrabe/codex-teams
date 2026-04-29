@@ -623,10 +623,7 @@ ${message}`;
     try {
       await Promise.race([
         session.client.close(),
-        new Promise((resolve) => {
-          const timer = setTimeout(resolve, 2_000);
-          timer.unref?.();
-        }),
+        delay(2_000),
       ]);
     } catch {}
   }
