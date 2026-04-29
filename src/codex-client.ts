@@ -133,6 +133,7 @@ export class CodexClientManager {
     for (const [agentId, session] of this.agentSessions) {
       this.agentSessions.delete(agentId);
       await this.closeSession(session);
+      this.agentTokens.delete(agentId);
     }
 
     this.connected = false;
@@ -170,7 +171,6 @@ export class CodexClientManager {
   }
 
   cleanupAgent(agentId: string): void {
-    this.agentTokens.delete(agentId);
     this.agentLocks.delete(agentId);
     this.activeControllers.delete(agentId);
 
@@ -185,7 +185,11 @@ export class CodexClientManager {
     }
 
     const session = this.agentSessions.get(agentId);
-    if (session) session.connected = false;
+    if (session) {
+      session.connected = false;
+    } else {
+      this.agentTokens.delete(agentId);
+    }
   }
 
   clearLock(agentId: string): void {
@@ -605,7 +609,13 @@ ${message}`;
   private async closeSession(session: AgentSession): Promise<void> {
     session.connected = false;
     try {
-      await session.client.close();
+      await Promise.race([
+        session.client.close(),
+        new Promise((resolve) => {
+          const timer = setTimeout(resolve, 2_000);
+          timer.unref?.();
+        }),
+      ]);
     } catch {}
   }
 
