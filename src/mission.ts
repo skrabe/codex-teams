@@ -1011,6 +1011,14 @@ function hasApprovedShutdownAbort(mission: MissionState, result: WorkerResult): 
   return isShutdownAbortOutput(result.output) && mission.shutdowns.some((event) => event.agentId === result.agentId && event.aborted);
 }
 
+function normalizeShutdownAbortResult(result: WorkerResult): WorkerResult {
+  return {
+    ...result,
+    status: "success",
+    output: "Worker terminated after approved shutdown.",
+  };
+}
+
 function assertNoWorkerFailures(results: WorkerResult[], context: string): void {
   const failures = getWorkerFailures(results);
   if (failures.length === 0) return;
@@ -1253,7 +1261,7 @@ async function shutdownWorkersAndCollectResults(
 
   const results = (await allResultsPromise).map((result) =>
     (graceTimeout && isShutdownAbortOutput(result.output)) || hasApprovedShutdownAbort(mission, result)
-      ? { ...result, status: "success" as const }
+      ? normalizeShutdownAbortResult(result)
       : result,
   );
   for (const result of results) {

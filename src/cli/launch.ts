@@ -249,9 +249,9 @@ export function registerLaunchCommand(program: Command): void {
         exitCode = 1;
       } finally {
         uninstallCleanupHandlers?.();
+        await codex.disconnect().catch(() => {});
         // @ts-expect-error httpServer may not be assigned
         if (httpServer) httpServer.httpServer.close();
-        await codex.disconnect().catch(() => {});
       }
       process.exit(exitCode);
     });
