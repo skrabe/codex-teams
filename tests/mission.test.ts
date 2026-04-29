@@ -375,6 +375,56 @@ describe("createMission + runMission", () => {
     }
   });
 
+  it("treats lead-approved shutdown aborts as successful forced termination", async () => {
+    let activeMission: ReturnType<typeof createMission>["mission"];
+
+    codex.sendToAgent = async (agent: Agent, message: string) => {
+      codex.calls.push({ agentId: agent.id, message });
+      agent.status = "working";
+      agent.threadId = agent.threadId ?? `thread-${agent.id}`;
+      if (agent.isLead) {
+        agent.lastOutput = "lead done";
+        agent.status = "idle";
+        return "lead done";
+      }
+
+      return new Promise<string>((_resolve, reject) => {
+        setTimeout(() => {
+          activeMission.shutdowns.push({
+            agentId: agent.id,
+            requestedBy: activeMission.leadId,
+            approvedBy: agent.id,
+            reason: "done",
+            aborted: true,
+            terminationMode: "forced",
+            recoveredTasks: [],
+            notification: "done",
+            timestamp: new Date(),
+          });
+          reject(new Error("Codex agent worker error: MCP error -32001: AbortError: This operation was aborted"));
+        }, 1);
+      });
+    };
+
+    const created = createMission(
+      {
+        objective: "Lead shutdown",
+        workDir: "/tmp",
+        team: [{ role: "lead", isLead: true }, { role: "worker" }],
+      },
+      state,
+    );
+    activeMission = created.mission;
+
+    await runMission(created.mission, created.team, codex, state, messages);
+
+    assert.equal(created.mission.phase, "completed");
+    assert.equal(created.mission.workerResults.length, 1);
+    assert.equal(created.mission.workerResults[0].status, "success");
+    assert.equal(created.mission.agentStates.get(created.mission.workerIds[0])?.terminationMode, "forced");
+    assert.equal(created.mission.agentStates.get(created.mission.workerIds[0])?.lifecycle, "terminated");
+  });
+
   it("fails mission when worker returns a hook-blocked error", async () => {
     codex.sendToAgent = async (agent: Agent, message: string) => {
       codex.calls.push({ agentId: agent.id, message });

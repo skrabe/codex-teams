@@ -1007,6 +1007,10 @@ function isShutdownAbortOutput(output: string): boolean {
   return lower.includes("aborterror") || lower.includes("operation was aborted") || lower.includes("worker_lifecycle_aborted");
 }
 
+function hasApprovedShutdownAbort(mission: MissionState, result: WorkerResult): boolean {
+  return isShutdownAbortOutput(result.output) && mission.shutdowns.some((event) => event.agentId === result.agentId && event.aborted);
+}
+
 function assertNoWorkerFailures(results: WorkerResult[], context: string): void {
   const failures = getWorkerFailures(results);
   if (failures.length === 0) return;
@@ -1248,12 +1252,13 @@ async function shutdownWorkersAndCollectResults(
   }
 
   const results = (await allResultsPromise).map((result) =>
-    graceTimeout && isShutdownAbortOutput(result.output)
+    (graceTimeout && isShutdownAbortOutput(result.output)) || hasApprovedShutdownAbort(mission, result)
       ? { ...result, status: "success" as const }
       : result,
   );
   for (const result of results) {
-    const mode = graceTimeout ? (forced.has(result.agentId) ? "forced" : "grace_timeout") : "graceful";
+    const shutdown = mission.shutdowns.find((event) => event.agentId === result.agentId);
+    const mode = shutdown?.terminationMode ?? (graceTimeout ? (forced.has(result.agentId) ? "forced" : "grace_timeout") : "graceful");
     const agent = team.agents.get(result.agentId);
     if (agent) {
       agent.status = result.status === "error" ? "error" : "idle";
