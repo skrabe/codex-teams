@@ -1591,6 +1591,7 @@ export async function runMission(
 export interface LaunchMissionParams {
   objective: string;
   workDir: string;
+  teamName?: string;
   team: Array<{
     role: string;
     specialization?: string;
@@ -1620,7 +1621,7 @@ export function createMission(
   }
 
   const team = state.createTeam(
-    `mission-${crypto.randomUUID().slice(0, 6)}`,
+    params.teamName ?? `mission-${crypto.randomUUID().slice(0, 6)}`,
     params.team.map((t) => ({
       role: t.role,
       specialization: t.specialization,

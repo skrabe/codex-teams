@@ -29,6 +29,7 @@ export function registerLaunchCommand(program: Command): void {
     .option("--reasoning <effort>", "Reasoning effort: none | minimal | low | medium | high | xhigh", "none")
     .option("--fast", "Enable fast output mode (service_tier=fast)")
     .option("--team-json <json>", "Full team config as JSON (overrides --lead/--worker)")
+    .option("--teams-json <json>", "Multiple teams as JSON: [{name, objective?, team:[...]}]")
     .option("--hook-task-created <command>", "Shell command for TaskCreated hook")
     .option("--hook-task-completed <command>", "Shell command for TaskCompleted hook")
     .option("--hook-teammate-idle <command>", "Shell command for TeammateIdle hook")
@@ -65,6 +66,168 @@ export function registerLaunchCommand(program: Command): void {
 
         const isolationMode = opts.isolation as "worktree" | undefined;
         const symlinkDirs = opts.symlinkDirs ? (opts.symlinkDirs as string).split(",").map((d: string) => d.trim()) : undefined;
+
+        if (opts.teamsJson && opts.teamJson) {
+          throw new Error("Use either --teams-json or --team-json, not both");
+        }
+
+        const hookCommands = {
+          taskCreated: opts.hookTaskCreated as string | undefined,
+          taskCompleted: opts.hookTaskCompleted as string | undefined,
+          teammateIdle: opts.hookTeammateIdle as string | undefined,
+        };
+        const hasHooks = Object.values(hookCommands).some(Boolean);
+
+        const formatMsg = (m: { from: string; fromRole: string; text: string; timestamp: Date }) => ({
+          from: `${m.fromRole} (${m.from})`,
+          text: m.text,
+          time: m.timestamp.toISOString(),
+        });
+
+        if (opts.teamsJson) {
+          const teamSpecs = JSON.parse(opts.teamsJson) as Array<{
+            name?: string;
+            objective?: string;
+            team: Array<{
+              role: string;
+              specialization?: string;
+              isLead?: boolean;
+              sandbox?: "plan-mode" | "workspace-write" | "danger-full-access";
+              model?: string;
+              reasoningEffort?: "none" | "minimal" | "low" | "medium" | "high" | "xhigh";
+              fastMode?: boolean;
+              isolation?: "worktree";
+              symlinkDirs?: string[];
+            }>;
+          }>;
+          if (!Array.isArray(teamSpecs) || teamSpecs.length === 0) {
+            throw new Error("--teams-json must be a non-empty array");
+          }
+
+          for (const spec of teamSpecs) {
+            if (opts.hints !== false) {
+              const warnings = emitLaunchWarnings({
+                team: spec.team,
+                verify: opts.verify,
+                verifier: opts.verifier,
+              });
+              for (const warning of warnings) {
+                console.error(`codex-teams: [hint] ${spec.name ? `${spec.name}: ` : ""}${warning}`);
+              }
+            }
+          }
+
+          const runs = teamSpecs.map((spec, index) => {
+            const { mission, team } = createMission(
+              {
+                objective: spec.objective ?? opts.objective,
+                workDir: opts.workDir,
+                teamName: spec.name,
+                team: spec.team.map((member) => ({
+                  ...member,
+                  model: member.model ?? opts.model,
+                  sandbox: member.sandbox ?? opts.sandbox,
+                  reasoningEffort: member.reasoningEffort ?? opts.reasoning,
+                  fastMode: member.fastMode ?? (opts.fast ?? false),
+                  approvalPolicy: member.isLead ? "never" : "on-request",
+                })),
+                hooks: hasHooks ? hookCommands : undefined,
+                verifyCommand: opts.verify,
+                verifierRole: opts.verifier as string | undefined,
+                maxVerifyRetries: parseInt(opts.maxRetries, 10),
+                staleThresholdMs: parseInt(opts.staleThreshold, 10) * 60_000 || undefined,
+              },
+              state,
+            );
+
+            registerMissionPersistence(mission, (snapshot) => {
+              writeMissionState(mission.id, {
+                ...snapshot,
+                commsPort: httpServer.port,
+                pid: process.pid,
+              });
+            });
+
+            if (index === 0) {
+              cleanupContext = {
+                mission,
+                team,
+                state,
+                codex,
+                messages,
+                httpServer: httpServer.httpServer,
+              };
+              uninstallCleanupHandlers = installRuntimeCleanupHandlers(cleanupContext);
+            }
+
+            console.error(`codex-teams: mission ${mission.id} launched (${team.name})`);
+            console.error(`codex-teams: team ${team.id} — lead: ${mission.leadId}, workers: ${mission.workerIds.join(", ")}`);
+            return { mission, team };
+          });
+
+          await Promise.all(runs.map(({ mission, team }) =>
+            runMission(mission, team, codex, state, messages, (p) => {
+              console.error(`codex-teams: [${team.name}:${p.phase}] ${p.detail ?? ""}`);
+              writeMissionState(mission.id, {
+                ...serializeMissionState(mission),
+                phase: p.phase,
+                commsPort: httpServer.port,
+                pid: process.pid,
+              });
+            }),
+          ));
+
+          const teamResults = runs.map(({ mission }) => ({
+            missionId: mission.id,
+            teamName: mission.teamName,
+            taskListId: mission.taskListId,
+            phase: mission.phase,
+            createdAt: mission.createdAt.toISOString(),
+            updatedAt: mission.updatedAt.toISOString(),
+            agents: serializeMissionState(mission).agents,
+            leadOutput: mission.leadOutput || undefined,
+            workerResults: mission.workerResults,
+            shutdowns: mission.shutdowns.length > 0
+              ? mission.shutdowns.map((shutdown) => ({
+                  agentId: shutdown.agentId,
+                  requestedBy: shutdown.requestedBy,
+                  approvedBy: shutdown.approvedBy,
+                  reason: shutdown.reason,
+                  aborted: shutdown.aborted,
+                  recoveredTasks: shutdown.recoveredTasks,
+                  notification: shutdown.notification,
+                  time: shutdown.timestamp.toISOString(),
+                }))
+              : undefined,
+            protocolMessages: mission.comms?.protocol.map((m) => ({
+              type: m.type,
+              from: m.from,
+              to: m.to,
+              data: m.data,
+              time: m.timestamp.toISOString(),
+            })),
+            leadChat: mission.comms?.leadChat.map(formatMsg),
+            sharedArtifacts: mission.comms?.sharedArtifacts.map((a) => ({
+              from: a.from,
+              data: a.data,
+              time: a.timestamp.toISOString(),
+            })),
+            taskBoard: buildTaskBoardSnapshot(mission.taskListId),
+            verificationLog: mission.verificationLog.length > 0 ? mission.verificationLog : undefined,
+            recentChat: mission.comms?.groupChat.slice(-20).map(formatMsg),
+            error: mission.error,
+          }));
+
+          console.log(JSON.stringify({ teams: teamResults }, null, 2));
+          uninstallCleanupHandlers?.();
+          for (const { mission } of runs) removeMissionState(mission.id);
+          exitCode = teamResults.every((result) => result.phase === "completed")
+            ? 0
+            : teamResults.some((result) => result.phase === "error")
+              ? 1
+              : 2;
+          return;
+        }
 
         let teamConfig: Array<{
           role: string;
@@ -120,13 +283,6 @@ export function registerLaunchCommand(program: Command): void {
           }
         }
 
-        const hookCommands = {
-          taskCreated: opts.hookTaskCreated as string | undefined,
-          taskCompleted: opts.hookTaskCompleted as string | undefined,
-          teammateIdle: opts.hookTeammateIdle as string | undefined,
-        };
-        const hasHooks = Object.values(hookCommands).some(Boolean);
-
         const { mission, team } = createMission(
           {
             objective: opts.objective,
@@ -172,12 +328,6 @@ export function registerLaunchCommand(program: Command): void {
             commsPort: httpServer.port,
             pid: process.pid,
           });
-        });
-
-        const formatMsg = (m: { from: string; fromRole: string; text: string; timestamp: Date }) => ({
-          from: `${m.fromRole} (${m.from})`,
-          text: m.text,
-          time: m.timestamp.toISOString(),
         });
 
         const result = {
