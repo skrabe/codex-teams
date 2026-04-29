@@ -621,10 +621,8 @@ ${message}`;
   private async closeSession(session: AgentSession): Promise<void> {
     session.connected = false;
     try {
-      await Promise.race([
-        session.client.close(),
-        delay(2_000),
-      ]);
+      void Promise.resolve().then(() => session.client.close()).catch(() => {});
+      await delay(250);
     } catch {}
   }
 
