@@ -9,6 +9,7 @@ import { HOOK_BLOCK_PREFIX, runHook } from "./hooks.js";
 import { syncMissionAgentState, syncMissionControlPlaneState } from "./mission.js";
 
 const CODEX_TIMEOUT_MS = 180 * 60 * 1000;
+const DEFAULT_DISCONNECT_GRACE_MS = 5_000;
 const STARTUP_CONTEXT_CONTRACT = `=== STARTUP CONTEXT CONTRACT ===
 This startup payload is intentionally minimal.
 - Do not assume you inherited any hidden parent transcript, prior turns, or full team chat history.
@@ -127,7 +128,18 @@ export class CodexClientManager {
   async disconnect(): Promise<void> {
     if (this.pendingOps.size > 0) {
       console.error(`codex-teams: waiting for ${this.pendingOps.size} pending operation(s)...`);
-      await Promise.allSettled(this.pendingOps);
+      const completed = await Promise.race([
+        Promise.allSettled(Array.from(this.pendingOps)).then(() => true),
+        delay(getDisconnectGraceMs()).then(() => false),
+      ]);
+      if (!completed) {
+        console.error(`codex-teams: timed out waiting for ${this.pendingOps.size} pending operation(s); forcing shutdown`);
+        for (const controller of this.activeControllers.values()) {
+          controller.abort();
+        }
+        this.activeControllers.clear();
+        this.agentLocks.clear();
+      }
     }
 
     for (const [agentId, session] of this.agentSessions) {
@@ -633,4 +645,17 @@ ${message}`;
 
     return JSON.stringify(result);
   }
+}
+
+function getDisconnectGraceMs(): number {
+  const raw = process.env.CODEX_TEAMS_DISCONNECT_GRACE_MS;
+  if (!raw) return DEFAULT_DISCONNECT_GRACE_MS;
+  const parsed = Number(raw);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : DEFAULT_DISCONNECT_GRACE_MS;
+}
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
 }

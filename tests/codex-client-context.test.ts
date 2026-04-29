@@ -117,4 +117,31 @@ describe("codex-client startup context hygiene", () => {
       search: true,
     });
   });
+
+  it("bounds disconnect while agent operations are still pending", async () => {
+    const originalGrace = process.env.CODEX_TEAMS_DISCONNECT_GRACE_MS;
+    process.env.CODEX_TEAMS_DISCONNECT_GRACE_MS = "10";
+    const stuck = new CodexClientManager();
+    const controller = new AbortController();
+    let aborted = false;
+    controller.signal.addEventListener("abort", () => {
+      aborted = true;
+    });
+    (stuck as unknown as { pendingOps: Set<Promise<unknown>> }).pendingOps.add(new Promise(() => {}));
+    (stuck as unknown as { activeControllers: Map<string, AbortController> }).activeControllers.set("agent-1", controller);
+    (stuck as unknown as { agentLocks: Map<string, Promise<unknown>> }).agentLocks.set("agent-1", Promise.resolve());
+
+    try {
+      const started = Date.now();
+      await stuck.disconnect();
+
+      assert.equal(aborted, true);
+      assert.equal((stuck as unknown as { activeControllers: Map<string, AbortController> }).activeControllers.size, 0);
+      assert.equal((stuck as unknown as { agentLocks: Map<string, Promise<unknown>> }).agentLocks.size, 0);
+      assert.ok(Date.now() - started < 1_000);
+    } finally {
+      if (originalGrace === undefined) delete process.env.CODEX_TEAMS_DISCONNECT_GRACE_MS;
+      else process.env.CODEX_TEAMS_DISCONNECT_GRACE_MS = originalGrace;
+    }
+  });
 });
