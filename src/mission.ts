@@ -1273,6 +1273,7 @@ async function shutdownWorkersAndCollectResults(
       agent.lifecycle = result.status === "error" ? "error" : "terminated";
       agent.isActive = false;
       agent.terminalReason = result.status === "error" ? result.output : "mission_complete";
+      agent.lastOutput = result.output;
       agent.lastSeenAt = new Date();
     }
     updateMissionAgentState(team.id, result.agentId, {
@@ -1281,6 +1282,7 @@ async function shutdownWorkersAndCollectResults(
       isActive: false,
       terminationMode: mode,
       terminalReason: result.status === "error" ? result.output : "mission_complete",
+      lastOutput: result.output,
     });
   }
 
