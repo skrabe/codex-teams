@@ -398,11 +398,13 @@ export function registerLaunchCommand(program: Command): void {
         if (cleanupContext) await cleanupMissionRuntime(cleanupContext, "launch_failure");
         exitCode = 1;
       } finally {
+        const forceExit = setTimeout(() => process.exit(exitCode), 15_000);
         uninstallCleanupHandlers?.();
         await codex.disconnect().catch(() => {});
         await new Promise((resolve) => setTimeout(resolve, 5_000));
         // @ts-expect-error httpServer may not be assigned
         if (httpServer) httpServer.httpServer.close();
+        clearTimeout(forceExit);
       }
       process.exit(exitCode);
     });
