@@ -250,6 +250,7 @@ export function registerLaunchCommand(program: Command): void {
       } finally {
         uninstallCleanupHandlers?.();
         await codex.disconnect().catch(() => {});
+        await new Promise((resolve) => setTimeout(resolve, 1_000));
         // @ts-expect-error httpServer may not be assigned
         if (httpServer) httpServer.httpServer.close();
       }
