@@ -185,9 +185,7 @@ export class CodexClientManager {
     }
 
     const session = this.agentSessions.get(agentId);
-    if (!session) return;
-    this.agentSessions.delete(agentId);
-    void this.closeSession(session);
+    if (session) session.connected = false;
   }
 
   clearLock(agentId: string): void {
